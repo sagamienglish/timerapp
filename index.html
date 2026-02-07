@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Classroom Timer</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            400: '#38bdf8', // Sky/Cyan tone
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Google Fonts: Outfit (Modern & Stylish) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            touch-action: manipulation;
+        }
+        
+        .tabular-nums {
+            font-feature-settings: "tnum";
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* 全画面モード制御 */
+        body:fullscreen .hide-in-fullscreen,
+        body:-webkit-full-screen .hide-in-fullscreen,
+        body.fake-fullscreen .hide-in-fullscreen {
+            display: none !important;
+        }
+
+        .show-in-fullscreen {
+            display: none !important;
+        }
+        body:fullscreen .show-in-fullscreen,
+        body:-webkit-full-screen .show-in-fullscreen,
+        body.fake-fullscreen .show-in-fullscreen {
+            display: flex !important;
+        }
+
+        body:fullscreen #time-display,
+        body:-webkit-full-screen #time-display,
+        body.fake-fullscreen #time-display {
+            cursor: pointer;
+        }
+
+        body:fullscreen #main-display,
+        body:-webkit-full-screen #main-display,
+        body.fake-fullscreen #main-display {
+            height: 100vh;
+            width: 100vw;
+            justify-content: center;
+        }
+
+        body.fake-fullscreen #main-display {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: inherit;
+            z-index: 9999;
+        }
+        
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* StudyRec風の柔らかいシャドウ */
+        .soft-shadow {
+            box-shadow: 0 4px 20px rgba(14, 165, 233, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-white text-slate-800 transition-colors duration-300 min-h-screen flex flex-col overflow-hidden" id="app-body">
+
+    <!-- Header Controls -->
+    <header class="p-4 flex justify-between items-center relative z-20 hide-in-fullscreen">
+        <!-- Mode Tabs -->
+        <div class="flex gap-1 bg-slate-100 rounded-2xl p-1.5 border border-slate-200" id="mode-container">
+            <button id="btn-mode-timer" onclick="setMode('timer')" class="flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm bg-brand-500 text-white shadow-lg shadow-brand-500/30">
+                <i data-lucide="timer" class="w-4 h-4"></i> Timer
+            </button>
+            <button id="btn-mode-stopwatch" onclick="setMode('stopwatch')" class="flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm text-slate-500 hover:text-brand-600 hover:bg-white">
+                <i data-lucide="clock" class="w-4 h-4"></i> Count Up
+            </button>
+        </div>
+
+        <!-- Right Side Settings -->
+        <div class="flex gap-2 items-center bg-slate-100 p-2 rounded-2xl border border-slate-200" id="settings-container">
+            
+            <div class="relative group mx-1">
+                <select id="sound-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider" title="Select Sound">
+                    <option value="electronic">Beep</option>
+                    <option value="alarm">Alarm</option>
+                    <option value="chime">Chime</option>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
+                    <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
+                </div>
+            </div>
+
+            <div class="w-px h-5 bg-slate-300 mx-1"></div>
+
+            <button onclick="toggleVisual()" class="p-2 rounded-xl hover:bg-white hover:text-brand-500 transition-all text-slate-500" title="Toggle Visual Style">
+                <i id="icon-visual" data-lucide="minus" class="w-4 h-4"></i>
+            </button>
+
+            <button onclick="toggleSound()" class="p-2 rounded-xl hover:bg-white transition-all text-brand-500" id="btn-sound" title="Toggle Sound">
+                <i id="icon-sound" data-lucide="volume-2" class="w-4 h-4"></i>
+            </button>
+
+            <button onclick="toggleTheme()" class="p-2 rounded-xl hover:bg-white hover:text-orange-500 transition-all text-slate-500" id="btn-theme" title="Toggle Theme">
+                <i id="icon-theme" data-lucide="moon" class="w-4 h-4"></i>
+            </button>
+            
+            <div class="w-px h-5 bg-slate-300 mx-1"></div>
+
+            <button onclick="toggleFullscreen()" class="p-2 rounded-xl hover:bg-white hover:text-brand-500 transition-all text-slate-500" title="Enter Fullscreen">
+                <i id="icon-fullscreen" data-lucide="maximize" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Display Area -->
+    <main id="main-display" class="flex-1 flex flex-col items-center justify-center relative w-full h-full">
+        
+        <!-- Visuals (Ring) -->
+        <div id="visual-ring" class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 transition-opacity duration-500">
+            <!-- 12時の位置(-90deg)から開始。座標系は0 0 100 100 -->
+            <svg class="w-[85vmin] h-[85vmin] transform -rotate-90 drop-shadow-xl" viewBox="0 0 100 100">
+                <!-- Background Circle -->
+                <circle id="ring-bg" cx="50" cy="50" r="42" fill="none" stroke="#e2e8f0" stroke-width="8" class="opacity-50"></circle>
+                <!-- Progress Circle (Cyan) -->
+                <!-- stroke-dashoffsetをマイナス方向に動かすことで、始点を時計回りにずらす -->
+                <circle id="ring-progress" cx="50" cy="50" r="42" fill="none" stroke="#0ea5e9" stroke-width="8" 
+                        stroke-dasharray="263.89" stroke-dashoffset="0" stroke-linecap="round"
+                        class="transition-all duration-1000 ease-linear"></circle>
+            </svg>
+        </div>
+
+        <!-- Visuals (Bar) -->
+        <div id="visual-bar" class="absolute top-0 left-0 w-full h-4 bg-slate-100">
+            <div id="bar-progress" class="h-full bg-brand-500 shadow-[0_0_20px_rgba(14,165,233,0.4)] transition-all duration-1000 ease-linear" style="width: 100%;"></div>
+        </div>
+
+        <!-- Time Display -->
+        <div id="time-display" onclick="handleTimeClick()" class="relative z-10 font-extrabold tabular-nums leading-none select-none transition-all duration-200 cursor-default text-slate-800 flex items-center justify-center gap-1 sm:gap-2" 
+             style="font-size: clamp(6rem, 28vw, 24rem);">
+            <span>05</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span>00</span>
+        </div>
+
+        <!-- Exit Fullscreen Button -->
+        <button onclick="toggleFullscreen()" class="show-in-fullscreen fixed bottom-8 right-8 p-4 bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 rounded-full backdrop-blur-md transition-all z-50 items-center justify-center group" title="Exit Fullscreen">
+            <i data-lucide="minimize" class="w-8 h-8 opacity-70 group-hover:opacity-100 transition-opacity"></i>
+        </button>
+
+        <!-- Control Buttons -->
+        <div class="flex flex-col items-center gap-8 mt-6 z-20 hide-in-fullscreen w-full max-w-5xl px-4">
+            
+            <!-- Play/Pause & Reset -->
+            <div class="flex items-center gap-6">
+                <button id="btn-toggle" onclick="toggleTimer()" class="group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-brand-500 hover:bg-brand-400 text-white ring-4 ring-transparent hover:ring-brand-200">
+                    <div id="icon-play-wrapper" class="flex items-center justify-center">
+                        <i data-lucide="play" class="w-12 h-12 ml-1 fill-current group-hover:scale-110 transition-transform"></i>
+                    </div>
+                    <div id="icon-pause-wrapper" class="hidden flex items-center justify-center">
+                        <i data-lucide="pause" class="w-12 h-12 fill-current"></i>
+                    </div>
+                </button>
+
+                <button onclick="resetTimer()" class="p-6 rounded-full shadow-md transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-white hover:bg-slate-50 text-slate-400 border border-slate-200 hover:text-slate-600">
+                    <i data-lucide="rotate-ccw" class="w-8 h-8"></i>
+                </button>
+            </div>
+
+            <!-- Single Row Quick Settings -->
+            <div id="timer-controls" class="w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div class="w-full overflow-x-auto no-scrollbar pb-4">
+                    <div class="flex justify-center min-w-max gap-4 px-4">
+                        
+                        <!-- +Add Time Group -->
+                        <div class="flex gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-100" id="quick-group">
+                             <button onclick="addTime(1)" class="quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm">+1s</button>
+                            <button onclick="addTime(10)" class="quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm">+10s</button>
+                            <button onclick="addTime(30)" class="quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm">+30s</button>
+                            <button onclick="addTime(60)" class="quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm">+1m</button>
+                            <button onclick="addTime(300)" class="quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm">+5m</button>
+                        </div>
+
+                        <!-- Divider -->
+                        <div class="w-px bg-slate-200 mx-1 my-2"></div>
+
+                        <!-- Presets Group -->
+                        <div class="flex gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-100" id="preset-group">
+                            <button onclick="setPreset(0)" class="preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm">0:00</button>
+                            <button onclick="setPreset(60)" class="preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm">1:00</button>
+                            <button onclick="setPreset(180)" class="preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm">3:00</button>
+                            <button onclick="setPreset(300)" class="preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm">5:00</button>
+                            <button onclick="setPreset(600)" class="preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm">10:00</button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- App Logic -->
+    <script>
+        var audioCtx = null; 
+
+        const state = {
+            theme: 'light',
+            visualType: 'bar',
+            mode: 'timer',
+            isSoundOn: true,
+            soundType: 'electronic',
+            timeLeft: 300,
+            initialTime: 300,
+            countUpTime: 0,
+            isActive: false,
+            interval: null
+        };
+
+        const els = {
+            body: document.getElementById('app-body'),
+            modeContainer: document.getElementById('mode-container'),
+            settingsContainer: document.getElementById('settings-container'),
+            quickGroup: document.getElementById('quick-group'),
+            presetGroup: document.getElementById('preset-group'),
+            timeDisplay: document.getElementById('time-display'),
+            visualBar: document.getElementById('visual-bar'),
+            visualRing: document.getElementById('visual-ring'),
+            barProgress: document.getElementById('bar-progress'),
+            ringProgress: document.getElementById('ring-progress'),
+            ringBg: document.getElementById('ring-bg'),
+            timerControls: document.getElementById('timer-controls'),
+            btnToggle: document.getElementById('btn-toggle'),
+            iconPlayWrapper: document.getElementById('icon-play-wrapper'),
+            iconPauseWrapper: document.getElementById('icon-pause-wrapper'),
+            btnSound: document.getElementById('btn-sound'),
+            iconSound: document.getElementById('icon-sound'),
+            btnTheme: document.getElementById('btn-theme'),
+            iconTheme: document.getElementById('icon-theme'),
+            iconVisual: document.getElementById('icon-visual'),
+            soundSelect: document.getElementById('sound-select'),
+            quickBtns: document.querySelectorAll('.quick-btn'),
+            presetBtns: document.querySelectorAll('.preset-btn')
+        };
+
+        window.onload = () => {
+            lucide.createIcons();
+            updateDisplay();
+            updatePlayButton();
+            applyThemeStyle();
+            
+            els.soundSelect.addEventListener('change', (e) => {
+                state.soundType = e.target.value;
+            });
+        };
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function handleTimeClick() {
+            const isFullscreen = document.fullscreenElement || 
+                               document.webkitFullscreenElement || 
+                               document.body.classList.contains('fake-fullscreen');
+            
+            if (isFullscreen) {
+                toggleTimer();
+            }
+        }
+
+        function toggleTimer() {
+            initAudio();
+            state.isActive = !state.isActive;
+            updatePlayButton();
+            
+            if (state.isActive) {
+                state.interval = setInterval(tick, 1000);
+            } else {
+                clearInterval(state.interval);
+            }
+        }
+
+        function tick() {
+            if (state.mode === 'timer') {
+                if (state.timeLeft <= 0) {
+                    state.timeLeft = 0;
+                    state.isActive = false;
+                    clearInterval(state.interval);
+                    updatePlayButton();
+                    playAlarm();
+                    flashScreen();
+                } else {
+                    state.timeLeft--;
+                }
+            } else {
+                state.countUpTime++;
+            }
+            updateDisplay();
+        }
+
+        function flashScreen() {
+            let count = 0;
+            const flashInt = setInterval(() => {
+                if (els.body.classList.contains('bg-red-500')) {
+                    els.body.classList.remove('bg-red-500');
+                    if (state.theme === 'dark') {
+                         els.body.classList.add('bg-slate-950');
+                    } else {
+                         els.body.classList.add('bg-white');
+                    }
+                } else {
+                    els.body.classList.remove('bg-slate-950', 'bg-white');
+                    els.body.classList.add('bg-red-500');
+                }
+                
+                count++;
+                if(count > 5) {
+                    clearInterval(flashInt);
+                    els.body.classList.remove('bg-red-500');
+                    applyThemeStyle();
+                }
+            }, 250);
+        }
+
+        function resetTimer() {
+            state.isActive = false;
+            clearInterval(state.interval);
+            updatePlayButton();
+            
+            if (state.mode === 'timer') {
+                state.timeLeft = state.initialTime;
+            } else {
+                state.countUpTime = 0;
+            }
+            els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
+            updateDisplay();
+        }
+
+        function addTime(seconds) {
+            if (state.mode !== 'timer') return;
+            state.timeLeft += seconds;
+            if (state.timeLeft > state.initialTime) {
+                state.initialTime = state.timeLeft;
+            }
+            updateDisplay();
+        }
+
+        function setPreset(seconds) {
+            state.isActive = false;
+            clearInterval(state.interval);
+            state.timeLeft = seconds;
+            state.initialTime = Math.max(1, seconds);
+            updatePlayButton();
+            updateDisplay();
+        }
+
+        function setMode(mode) {
+            state.mode = mode;
+            resetTimer();
+            
+            const btnTimer = document.getElementById('btn-mode-timer');
+            const btnStopwatch = document.getElementById('btn-mode-stopwatch');
+            
+            if (mode === 'timer') {
+                btnTimer.className = `flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm bg-brand-500 text-white shadow-lg shadow-brand-500/30`;
+                btnStopwatch.className = `flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm ${state.theme === 'dark' ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-brand-600 hover:bg-white'}`;
+                els.timerControls.classList.remove('hidden');
+            } else {
+                btnTimer.className = `flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm ${state.theme === 'dark' ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-brand-600 hover:bg-white'}`;
+                btnStopwatch.className = `flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm bg-teal-500 text-white shadow-lg shadow-teal-500/30`;
+                els.timerControls.classList.add('hidden');
+            }
+            updateDisplay();
+        }
+
+        function updatePlayButton() {
+            if (state.isActive) {
+                els.btnToggle.className = "group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-amber-400 hover:bg-amber-500 text-white ring-4 ring-transparent hover:ring-amber-200";
+                els.iconPlayWrapper.classList.add('hidden');
+                els.iconPauseWrapper.classList.remove('hidden');
+            } else {
+                els.btnToggle.className = "group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-brand-500 hover:bg-brand-400 text-white ring-4 ring-transparent hover:ring-brand-200";
+                els.iconPlayWrapper.classList.remove('hidden');
+                els.iconPauseWrapper.classList.add('hidden');
+            }
+        }
+
+        function updateDisplay() {
+            const t = state.mode === 'timer' ? state.timeLeft : state.countUpTime;
+            const m = Math.floor(t / 60);
+            const s = t % 60;
+            const mStr = m.toString().padStart(2, '0');
+            const sStr = s.toString().padStart(2, '0');
+            
+            // 修正: 秒数文字の間隔を広げる
+            els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span>`;
+
+            let pct = 100;
+            if (state.mode === 'timer') {
+                pct = (state.timeLeft / state.initialTime) * 100;
+                pct = Math.max(0, Math.min(100, pct));
+            }
+
+            els.barProgress.style.width = `${pct}%`;
+            
+            // 円のアニメーション修正: 12時から時計回りに減らす
+            // 方法: 残りの長さ(remaining)を描画し、offsetをマイナス方向(時計回り)にずらす
+            const circumference = 263.89; // 2 * PI * 42
+            const remaining = circumference * (pct / 100);
+            const elapsed = circumference - remaining;
+
+            els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
+            els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
+            
+            if (state.mode === 'timer' && state.timeLeft <= 0) {
+                 els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
+                 els.barProgress.classList.remove('bg-brand-500', 'bg-teal-500');
+                 els.barProgress.classList.add('bg-red-500');
+                 els.ringProgress.setAttribute('stroke', '#ef4444');
+            } else {
+                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
+                 const baseColor = state.mode === 'timer' ? '#0ea5e9' : '#14b8a6'; 
+                 const barClass = state.mode === 'timer' ? 'bg-brand-500' : 'bg-teal-500';
+                 els.barProgress.classList.remove('bg-red-500');
+                 els.barProgress.className = `h-full shadow-[0_0_20px_rgba(14,165,233,0.4)] transition-all duration-1000 ease-linear ${barClass}`;
+                 els.ringProgress.setAttribute('stroke', baseColor);
+            }
+        }
+
+        function toggleFullscreen() {
+            if (document.body.classList.contains('fake-fullscreen')) {
+                document.body.classList.remove('fake-fullscreen');
+                return;
+            }
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(e => {
+                    document.body.classList.add('fake-fullscreen');
+                });
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && document.body.classList.contains('fake-fullscreen')) {
+                document.body.classList.remove('fake-fullscreen');
+            }
+        });
+
+        function toggleVisual() {
+            state.visualType = state.visualType === 'bar' ? 'ring' : 'bar';
+            
+            if (state.visualType === 'bar') {
+                els.visualBar.style.opacity = '1';
+                els.visualRing.style.opacity = '0';
+                els.iconVisual.setAttribute('data-lucide', 'minus');
+            } else {
+                els.visualBar.style.opacity = '0';
+                els.visualRing.style.opacity = '1';
+                els.iconVisual.setAttribute('data-lucide', 'loader');
+            }
+            lucide.createIcons();
+        }
+
+        function toggleTheme() {
+            state.theme = state.theme === 'light' ? 'dark' : 'light';
+            applyThemeStyle();
+        }
+
+        function applyThemeStyle() {
+            if (state.theme === 'dark') {
+                els.body.classList.replace('bg-white', 'bg-slate-950');
+                els.body.classList.replace('text-slate-800', 'text-white');
+                
+                els.modeContainer.classList.replace('bg-slate-100', 'bg-slate-900');
+                els.modeContainer.classList.replace('border-slate-200', 'border-slate-800');
+                
+                els.settingsContainer.classList.replace('bg-slate-100', 'bg-slate-900');
+                els.settingsContainer.classList.replace('border-slate-200', 'border-slate-800');
+                
+                els.quickGroup.classList.replace('bg-slate-50', 'bg-slate-900');
+                els.quickGroup.classList.replace('border-slate-100', 'border-slate-800');
+                
+                els.presetGroup.classList.replace('bg-slate-50', 'bg-slate-900');
+                els.presetGroup.classList.replace('border-slate-100', 'border-slate-800');
+
+                els.iconTheme.setAttribute('data-lucide', 'sun');
+                els.btnTheme.classList.replace('text-slate-500', 'text-yellow-400');
+                els.btnTheme.classList.replace('hover:text-orange-500', 'hover:text-yellow-200');
+                els.btnTheme.classList.replace('hover:bg-white', 'hover:bg-slate-800');
+
+                els.timeDisplay.classList.replace('text-slate-800', 'text-white');
+                els.ringBg.setAttribute('stroke', '#1e293b'); 
+
+                els.quickBtns.forEach(b => {
+                    b.className = "quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-slate-800 text-brand-400 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all active:scale-95 shadow-sm";
+                });
+                els.presetBtns.forEach(b => {
+                    b.className = "preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all active:scale-95 shadow-sm";
+                });
+
+            } else {
+                els.body.classList.replace('bg-slate-950', 'bg-white');
+                els.body.classList.replace('text-white', 'text-slate-800');
+
+                els.modeContainer.classList.replace('bg-slate-900', 'bg-slate-100');
+                els.modeContainer.classList.replace('border-slate-800', 'border-slate-200');
+
+                els.settingsContainer.classList.replace('bg-slate-900', 'bg-slate-100');
+                els.settingsContainer.classList.replace('border-slate-800', 'border-slate-200');
+
+                els.quickGroup.classList.replace('bg-slate-900', 'bg-slate-50');
+                els.quickGroup.classList.replace('border-slate-800', 'border-slate-100');
+
+                els.presetGroup.classList.replace('bg-slate-900', 'bg-slate-50');
+                els.presetGroup.classList.replace('border-slate-800', 'border-slate-100');
+
+                els.iconTheme.setAttribute('data-lucide', 'moon');
+                els.btnTheme.classList.replace('text-yellow-400', 'text-slate-500');
+                els.btnTheme.classList.replace('hover:text-yellow-200', 'hover:text-orange-500');
+                els.btnTheme.classList.replace('hover:bg-slate-800', 'hover:bg-white');
+
+                els.timeDisplay.classList.replace('text-white', 'text-slate-800');
+                els.ringBg.setAttribute('stroke', '#e2e8f0');
+
+                els.quickBtns.forEach(b => {
+                    b.className = "quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm";
+                });
+                els.presetBtns.forEach(b => {
+                    b.className = "preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm";
+                });
+            }
+            lucide.createIcons();
+            setMode(state.mode); 
+        }
+
+        function toggleSound() {
+            state.isSoundOn = !state.isSoundOn;
+            if (state.isSoundOn) {
+                els.iconSound.setAttribute('data-lucide', 'volume-2');
+                els.btnSound.classList.replace('text-red-500', 'text-brand-500');
+                els.btnSound.classList.remove('opacity-50');
+            } else {
+                els.iconSound.setAttribute('data-lucide', 'volume-x');
+                els.btnSound.classList.replace('text-brand-500', 'text-red-500');
+                els.btnSound.classList.add('opacity-50');
+            }
+            lucide.createIcons();
+        }
+
+        function playTone(freq, type, duration, startTime = 0) {
+            if (!state.isSoundOn || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = type;
+            osc.frequency.value = freq;
+            
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime + startTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start(audioCtx.currentTime + startTime);
+            osc.stop(audioCtx.currentTime + startTime + duration);
+        }
+
+        function playAlarm() {
+            if (!state.isSoundOn) return;
+            initAudio();
+
+            const type = state.soundType;
+
+            if (type === 'electronic') {
+                playTone(880, 'square', 0.1, 0);
+                playTone(880, 'square', 0.1, 0.15);
+                playTone(880, 'square', 0.4, 0.3);
+            } 
+            else if (type === 'alarm') {
+                for(let i=0; i<4; i++) {
+                    playTone(400, 'sawtooth', 0.1, i*0.2);
+                    playTone(300, 'sawtooth', 0.1, i*0.2 + 0.1);
+                }
+            }
+            else if (type === 'chime') {
+                playTone(659.25, 'sine', 1.5, 0);
+                playTone(329.63, 'sine', 1.5, 0);
+                setTimeout(() => {
+                    playTone(523.25, 'sine', 2.0, 0); 
+                    playTone(261.63, 'sine', 2.0, 0);
+                }, 800);
+            }
+        }
+    </script>
+</body>
+</html>
