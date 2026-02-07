@@ -58,9 +58,8 @@
             font-variant-numeric: tabular-nums;
         }
 
-        /* 全画面モード制御 */
-        body:fullscreen .hide-in-fullscreen,
-        body:-webkit-full-screen .hide-in-fullscreen,
+        /* 全画面モード制御 (修正: is-fullscreenクラスで確実に制御) */
+        body.is-fullscreen .hide-in-fullscreen,
         body.fake-fullscreen .hide-in-fullscreen {
             display: none !important;
         }
@@ -68,20 +67,18 @@
         .show-in-fullscreen {
             display: none !important;
         }
-        body:fullscreen .show-in-fullscreen,
-        body:-webkit-full-screen .show-in-fullscreen,
+        body.is-fullscreen .show-in-fullscreen,
         body.fake-fullscreen .show-in-fullscreen {
             display: flex !important;
         }
 
-        body:fullscreen #time-display,
-        body:-webkit-full-screen #time-display,
+        /* 全画面時のレイアウト調整 */
+        body.is-fullscreen #time-display,
         body.fake-fullscreen #time-display {
             cursor: pointer;
         }
 
-        body:fullscreen #main-display,
-        body:-webkit-full-screen #main-display,
+        body.is-fullscreen #main-display,
         body.fake-fullscreen #main-display {
             height: 100vh;
             width: 100vw;
@@ -195,7 +192,7 @@
             <i data-lucide="minimize" class="w-8 h-8 opacity-70 group-hover:opacity-100 transition-opacity"></i>
         </button>
 
-        <!-- Control Buttons -->
+        <!-- Control Buttons (hide-in-fullscreenクラスで隠す) -->
         <div class="flex flex-col items-center gap-8 mt-6 z-20 hide-in-fullscreen w-full max-w-5xl px-4">
             
             <!-- Play/Pause & Reset -->
@@ -299,7 +296,20 @@
             els.soundSelect.addEventListener('change', (e) => {
                 state.soundType = e.target.value;
             });
+
+            // 全画面変更検知リスナー (修正: これで確実にクラスを付与する)
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
         };
+
+        // 全画面状態を body クラスに反映
+        function handleFullscreenChange() {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                document.body.classList.add('is-fullscreen');
+            } else {
+                document.body.classList.remove('is-fullscreen');
+            }
+        }
 
         function initAudio() {
             if (!audioCtx) {
@@ -445,7 +455,6 @@
             const mStr = m.toString().padStart(2, '0');
             const sStr = s.toString().padStart(2, '0');
             
-            // 修正: 秒数文字の間隔を広げる
             els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span>`;
 
             let pct = 100;
@@ -456,8 +465,6 @@
 
             els.barProgress.style.width = `${pct}%`;
             
-            // 円のアニメーション修正: 12時から時計回りに減らす
-            // 方法: 残りの長さ(remaining)を描画し、offsetをマイナス方向(時計回り)にずらす
             const circumference = 263.89; // 2 * PI * 42
             const remaining = circumference * (pct / 100);
             const elapsed = circumference - remaining;
@@ -485,18 +492,34 @@
                 document.body.classList.remove('fake-fullscreen');
                 return;
             }
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(e => {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                const requestFs = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+                
+                if (requestFs) {
+                    requestFs.call(document.documentElement).catch(e => {
+                        console.log("Native fullscreen failed, using fallback");
+                        document.body.classList.add('fake-fullscreen');
+                    });
+                } else {
                     document.body.classList.add('fake-fullscreen');
-                });
+                }
             } else {
-                if (document.exitFullscreen) document.exitFullscreen();
+                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFs) {
+                    exitFs.call(document);
+                }
             }
         }
         
+        // Escapeキーでの全画面解除
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && document.body.classList.contains('fake-fullscreen')) {
-                document.body.classList.remove('fake-fullscreen');
+            if (e.key === 'Escape') {
+                if (document.body.classList.contains('fake-fullscreen')) {
+                    document.body.classList.remove('fake-fullscreen');
+                } else if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                    if (exitFs) exitFs.call(document);
+                }
             }
         });
 
