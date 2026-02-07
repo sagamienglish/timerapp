@@ -163,10 +163,10 @@
         <!-- Right Side Settings -->
         <div class="flex gap-2 items-center bg-slate-100 p-2 rounded-2xl border border-slate-200 flex-wrap justify-center" id="settings-container">
             
-            <!-- BGM Select (New) -->
+            <!-- BGM Select -->
             <div class="relative group mx-1">
                 <select id="bgm-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select BGM">
-                    <option value="">BGM Off</option>
+                    <option value="">Off</option>
                     <option value="Chill.mp3">Chill</option>
                     <option value="Happy.mp3">Happy</option>
                     <option value="Pop.mp3">Pop</option>
@@ -330,12 +330,13 @@
             soundType: 'electronic',
             timeLeft: 300,
             initialTime: 300,
-            countUpTime: 0,
+            countUpTime: 0, // Stopwatch accumulation (ms)
+            stopwatchStartTime: 0, // Timestamp for calculation
             isActive: false,
             interval: null,
             currentColor: colors[0],
             isAlarmRinging: false,
-            selectedBgm: "" // BGM state
+            selectedBgm: "" 
         };
 
         let els = {}; 
@@ -380,7 +381,7 @@
                 state.soundType = e.target.value;
             });
             
-            // BGM Listener (Updated logic)
+            // BGM Listener
             els.bgmSelect.addEventListener('change', (e) => {
                 state.selectedBgm = e.target.value;
                 updateBgm();
@@ -442,8 +443,6 @@
                 return;
             }
 
-            // Update source if changed
-            // getAttribute to compare raw string from value
             if (player.getAttribute('src') !== state.selectedBgm) {
                 player.src = state.selectedBgm;
             }
@@ -451,10 +450,8 @@
             let shouldPlay = false;
 
             if (state.mode === 'clock') {
-                // Clock: Play immediately if selected
                 shouldPlay = true;
             } else {
-                // Timer/Stopwatch: Play only if active (running) AND not alarming
                 if (state.isActive && !state.isAlarmRinging) {
                     shouldPlay = true;
                 }
@@ -462,7 +459,7 @@
 
             if (shouldPlay) {
                 if (player.paused) {
-                    player.play().catch(e => console.log('Playback prevented (user interaction needed):', e));
+                    player.play().catch(e => console.log('Playback prevented:', e));
                 }
             } else {
                 player.pause();
@@ -553,30 +550,43 @@
             initAudio();
             state.isActive = !state.isActive;
             updatePlayButton();
-            updateBgm(); // Check BGM
+            updateBgm(); 
             
             if (state.isActive) {
-                state.interval = setInterval(tick, 1000);
+                if (state.mode === 'stopwatch') {
+                    // Stopwatch logic: High precision
+                    // Calc start time based on current accumulated time
+                    const now = Date.now();
+                    state.stopwatchStartTime = now - state.countUpTime;
+                    state.interval = setInterval(tickStopwatch, 33); // ~30fps
+                } else {
+                    // Timer logic: Simple 1s
+                    state.interval = setInterval(tick, 1000);
+                }
             } else {
                 clearInterval(state.interval);
             }
         }
 
         function tick() {
-            if (state.mode === 'timer') {
-                if (state.timeLeft <= 0) {
-                    state.timeLeft = 0;
-                    state.isActive = false;
-                    clearInterval(state.interval);
-                    updatePlayButton();
-                    updateBgm(); // Stop BGM
-                    playAlarmLoop(); 
-                } else {
-                    state.timeLeft--;
-                }
+            // Timer Logic
+            if (state.timeLeft <= 0) {
+                state.timeLeft = 0;
+                state.isActive = false;
+                clearInterval(state.interval);
+                updatePlayButton();
+                updateBgm(); 
+                playAlarmLoop(); 
             } else {
-                state.countUpTime++;
+                state.timeLeft--;
             }
+            updateDisplay();
+        }
+
+        function tickStopwatch() {
+            // Stopwatch Logic (ms based)
+            const now = Date.now();
+            state.countUpTime = now - state.stopwatchStartTime;
             updateDisplay();
         }
 
@@ -606,7 +616,7 @@
                 clearInterval(alarmLoopInterval);
                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                 updateDisplay();
-                updateBgm(); // Re-check if BGM should resume (unlikely for timer, but good practice)
+                updateBgm(); 
             }
         }
 
@@ -615,7 +625,7 @@
             clearInterval(state.interval);
             stopAlarmIfRinging();
             updatePlayButton();
-            updateBgm(); // Stop BGM
+            updateBgm(); 
             
             if (state.mode === 'timer') {
                 state.timeLeft = state.initialTime;
@@ -643,7 +653,7 @@
             state.timeLeft = seconds;
             state.initialTime = Math.max(1, seconds);
             updatePlayButton();
-            updateBgm(); // Stop BGM
+            updateBgm(); 
             updateDisplay();
         }
 
@@ -710,10 +720,8 @@
                 els.barProgress.style.opacity = '0';
                 els.visualRing.style.opacity = '0';
                 
-                // DSEGフォント (Clock Mode Only) - まっすぐなスタイル
-                // クロックモードではブランドカラーを使用 (白を選んでいれば白になる)
+                // DSEGフォント (Clock Mode Only)
                 els.timeDisplay.className = `relative z-10 font-dseg leading-none select-none transition-colors duration-200 cursor-default flex items-baseline justify-center text-brand-500`;
-                // サイズ調整: 10%縮小
                 els.timeDisplay.style.fontSize = "clamp(5rem, 22vw, 20rem)";
 
                 els.timeDisplay.innerHTML = `
@@ -729,18 +737,41 @@
             els.barProgress.style.opacity = '1';
             els.visualRing.style.opacity = state.visualType === 'ring' ? '1' : '0';
             
+            let fontSizeClass = "clamp(6rem, 28vw, 24rem)";
+            
+            // Logic split
+            if (state.mode === 'stopwatch') {
+                 // Stopwatch (Count Up) Display: MM:SS.ms (no Hour)
+                 const totalMs = state.countUpTime;
+                 const m = Math.floor(totalMs / 60000);
+                 const s = Math.floor((totalMs % 60000) / 1000);
+                 const ms = Math.floor((totalMs % 1000) / 10); // 2 digits (0-99)
+
+                 const mStr = m.toString().padStart(2, '0');
+                 const sStr = s.toString().padStart(2, '0');
+                 const msStr = ms.toString().padStart(2, '0');
+
+                 // Longer string, smaller font
+                 fontSizeClass = "clamp(4rem, 20vw, 18rem)";
+                 
+                 els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span><span class="text-[0.5em] opacity-80 ml-1">.${msStr}</span>`;
+            
+            } else {
+                 // Timer (Count Down): MM:SS
+                 const t = state.timeLeft;
+                 const m = Math.floor(t / 60);
+                 const s = t % 60;
+                 
+                 const mStr = m.toString().padStart(2, '0');
+                 const sStr = s.toString().padStart(2, '0');
+                 
+                 els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span>`;
+            }
+
             els.timeDisplay.className = `relative z-10 font-extrabold tabular-nums leading-none select-none transition-colors duration-200 cursor-default flex items-center justify-center gap-1 sm:gap-2 ${textColorClass}`;
-            els.timeDisplay.style.fontSize = "clamp(6rem, 28vw, 24rem)";
+            els.timeDisplay.style.fontSize = fontSizeClass;
 
-            const t = state.mode === 'timer' ? state.timeLeft : state.countUpTime;
-            const m = Math.floor(t / 60);
-            const s = t % 60;
-            
-            const mStr = m.toString().padStart(2, '0');
-            const sStr = s.toString().padStart(2, '0');
-            
-            els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span>`;
-
+            // Progress Bar (Timer Only)
             let pct = 100;
             if (state.mode === 'timer') {
                 pct = (state.timeLeft / state.initialTime) * 100;
@@ -755,7 +786,7 @@
             els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
             els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
             
-            // 文字だけ赤点滅
+            // Alarm styling
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
