@@ -179,9 +179,10 @@
 
             <div class="w-px h-5 bg-slate-300 mx-1"></div>
 
-            <!-- Alarm Sound Select -->
+            <!-- Alarm Sound Select (Modified) -->
             <div class="relative group mx-1">
                 <select id="sound-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select Alarm Sound">
+                    <option value="">Off</option>
                     <option value="electronic">Beep</option>
                     <option value="alarm">Alarm</option>
                     <option value="chime">Chime</option>
@@ -212,9 +213,7 @@
                 <i id="icon-visual" data-lucide="minus" class="w-4 h-4"></i>
             </button>
 
-            <button onclick="toggleSound()" class="p-2 rounded-xl hover:bg-white transition-all text-brand-500" id="btn-sound" title="Toggle Sound">
-                <i id="icon-sound" data-lucide="volume-2" class="w-4 h-4"></i>
-            </button>
+            <!-- Sound Toggle Button Removed -->
 
             <button onclick="toggleTheme()" class="p-2 rounded-xl hover:bg-white hover:text-orange-500 transition-all text-slate-500" id="btn-theme" title="Toggle Dark/Light">
                 <i id="icon-theme" data-lucide="moon" class="w-4 h-4"></i>
@@ -327,7 +326,7 @@
             visualType: 'bar',
             mode: 'timer', 
             isSoundOn: true,
-            soundType: 'electronic',
+            soundType: 'electronic', // Default to BEEP if desired, or '' if OFF
             timeLeft: 300,
             initialTime: 300,
             countUpTime: 0, // Stopwatch accumulation (ms)
@@ -360,8 +359,8 @@
                 btnToggle: document.getElementById('btn-toggle'),
                 iconPlayWrapper: document.getElementById('icon-play-wrapper'),
                 iconPauseWrapper: document.getElementById('icon-pause-wrapper'),
-                btnSound: document.getElementById('btn-sound'),
-                iconSound: document.getElementById('icon-sound'),
+                // btnSound removed
+                // iconSound removed
                 btnTheme: document.getElementById('btn-theme'),
                 iconTheme: document.getElementById('icon-theme'),
                 iconVisual: document.getElementById('icon-visual'),
@@ -593,7 +592,8 @@
         let alarmLoopInterval;
 
         function playAlarmLoop() {
-            if (!state.isSoundOn) return;
+            // isSoundOnフラグの代わりにsoundTypeをチェック
+            if (!state.soundType) return;
             state.isAlarmRinging = true;
             
             playAlarmSound(); 
@@ -720,8 +720,10 @@
                 els.barProgress.style.opacity = '0';
                 els.visualRing.style.opacity = '0';
                 
-                // DSEGフォント (Clock Mode Only)
+                // DSEGフォント (Clock Mode Only) - まっすぐなスタイル
+                // クロックモードではブランドカラーを使用 (白を選んでいれば白になる)
                 els.timeDisplay.className = `relative z-10 font-dseg leading-none select-none transition-colors duration-200 cursor-default flex items-baseline justify-center text-brand-500`;
+                // サイズ調整: 10%縮小
                 els.timeDisplay.style.fontSize = "clamp(5rem, 22vw, 20rem)";
 
                 els.timeDisplay.innerHTML = `
@@ -786,7 +788,7 @@
             els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
             els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
             
-            // Alarm styling
+            // 文字だけ赤点滅
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
@@ -925,19 +927,7 @@
             setMode(state.mode); 
         }
 
-        function toggleSound() {
-            state.isSoundOn = !state.isSoundOn;
-            if (state.isSoundOn) {
-                els.iconSound.setAttribute('data-lucide', 'volume-2');
-                els.btnSound.classList.replace('text-red-500', 'text-brand-500');
-                els.btnSound.classList.remove('opacity-50');
-            } else {
-                els.iconSound.setAttribute('data-lucide', 'volume-x');
-                els.btnSound.classList.replace('text-brand-500', 'text-red-500');
-                els.btnSound.classList.add('opacity-50');
-            }
-            lucide.createIcons();
-        }
+        // Sound Toggle function removed
 
         function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
             if (!state.isSoundOn || !audioCtx) return;
@@ -960,6 +950,7 @@
         function playAlarmSound() {
             initAudio();
             const type = state.soundType;
+            if (!type) return; // If Off, do nothing
 
             if (type === 'electronic') {
                 playTone(880, 'square', 0.1, 0);
