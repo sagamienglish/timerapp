@@ -142,9 +142,16 @@
 </head>
 <body class="bg-white text-slate-800 transition-colors duration-300 min-h-screen flex flex-col overflow-hidden" id="app-body" onclick="stopAlarmIfRinging()">
 
-    <!-- Audio Players (Hidden) -->
-    <audio id="bgm-player" loop></audio>
-    <audio id="alarm-player" loop></audio> <!-- Loop alarm for 5 sec duration control -->
+    <!-- Audio Players (Pre-defined for iOS stability) -->
+    <audio id="bgm-player" loop preload="auto"></audio>
+    
+    <!-- Individual Alarm Players -->
+    <audio id="sound-Alarm.mp3" src="Alarm.mp3" preload="auto" loop></audio>
+    <audio id="sound-High.mp3" src="High.mp3" preload="auto" loop></audio>
+    <audio id="sound-Up.mp3" src="Up.mp3" preload="auto" loop></audio>
+    
+    <!-- Dummy for beep unlock -->
+    <div id="audio-unlock-trigger"></div>
 
     <!-- Header Controls -->
     <header class="p-4 flex flex-col sm:flex-row justify-between items-center gap-3 relative z-20 hide-in-fullscreen">
@@ -181,14 +188,14 @@
 
             <div class="w-px h-5 bg-slate-300 mx-1"></div>
 
-            <!-- Alarm Sound Select (File Based) -->
+            <!-- Alarm Sound Select -->
             <div class="relative group mx-1">
                 <select id="sound-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select Alarm Sound">
                     <option value="">OFF</option>
                     <option value="Alarm.mp3" selected>Alarm</option>
                     <option value="High.mp3">High</option>
                     <option value="Up.mp3">Up</option>
-                    <option value="Beep">Beep</option> <!-- 旧Beepを念のため残す場合はこれ -->
+                    <option value="Beep">Beep</option>
                 </select>
                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
                     <i data-lucide="bell" class="w-3 h-3 text-slate-400"></i>
@@ -208,8 +215,6 @@
             <button onclick="toggleVisual()" class="p-2 rounded-xl hover:bg-white hover:text-brand-500 transition-all text-slate-500" title="Toggle Visual Style">
                 <i id="icon-visual" data-lucide="minus" class="w-4 h-4"></i>
             </button>
-
-            <!-- Sound Toggle Button Removed -->
 
             <button onclick="toggleTheme()" class="p-2 rounded-xl hover:bg-white hover:text-orange-500 transition-all text-slate-500" id="btn-theme" title="Toggle Dark/Light">
                 <i id="icon-theme" data-lucide="moon" class="w-4 h-4"></i>
@@ -363,8 +368,7 @@
                 quickBtns: document.querySelectorAll('.quick-btn'),
                 presetBtns: document.querySelectorAll('.preset-btn'),
                 colorMenu: document.getElementById('color-menu'),
-                bgmPlayer: document.getElementById('bgm-player'),
-                alarmPlayer: document.getElementById('alarm-player')
+                bgmPlayer: document.getElementById('bgm-player')
             };
 
             generateAppIcons(); 
@@ -374,11 +378,6 @@
             // Event Listeners
             els.soundSelect.addEventListener('change', (e) => {
                 state.soundType = e.target.value;
-                // Preload on selection to help iOS
-                if(state.soundType && state.soundType !== 'Beep' && state.soundType !== '') {
-                    els.alarmPlayer.src = state.soundType;
-                    els.alarmPlayer.load();
-                }
             });
             
             els.bgmSelect.addEventListener('change', (e) => {
@@ -424,6 +423,42 @@
             const appleIcon = document.getElementById('apple-icon');
             if(favicon) favicon.href = dataUrl;
             if(appleIcon) appleIcon.href = dataUrl;
+        }
+
+        // --- Unlock Audio for iOS ---
+        // Helper to silent play specific element
+        function silentPlay(id) {
+            const el = document.getElementById(id);
+            if(el) {
+                el.volume = 0;
+                el.play().then(() => {
+                    el.pause();
+                    el.currentTime = 0;
+                    el.volume = 1.0;
+                }).catch(e => {});
+            }
+        }
+
+        // Unlock all audio elements
+        function unlockAllAudio() {
+            // Unlock file-based alarms
+            silentPlay('sound-Alarm.mp3');
+            silentPlay('sound-High.mp3');
+            silentPlay('sound-Up.mp3');
+            
+            // Unlock BGM
+            if (els.bgmPlayer) {
+                // If BGM is selected, play it properly. If not, just unlock.
+                if (!state.selectedBgm) {
+                    // Temporarily set a source just to unlock logic if needed, but usually empty src won't work.
+                    // If no BGM selected, we don't strictly need to unlock it yet.
+                    // But if user selects BGM mid-timer, it might need unlock.
+                    // Best effort:
+                }
+            }
+
+            // Unlock Beep
+            initAudio();
         }
 
         // --- BGM Logic ---
@@ -543,28 +578,9 @@
         function toggleTimer() {
             if (state.mode === 'clock') return;
             
-            // iOS Hack for Audio
+            // iOS Hack for Audio: Unlock everything on start
             if (!state.isActive) {
-                if (state.selectedBgm && els.bgmPlayer) {
-                     els.bgmPlayer.play().then(() => {
-                         if (!shouldPlayBgmNow()) els.bgmPlayer.pause();
-                     }).catch(e => {});
-                }
-                if (state.soundType && els.alarmPlayer && state.soundType !== 'Beep' && state.soundType !== '') {
-                    // Check if current src is set
-                    const currentSrc = els.alarmPlayer.getAttribute('src');
-                    if(!currentSrc || currentSrc !== state.soundType) {
-                        els.alarmPlayer.src = state.soundType;
-                    }
-                    // Muted play for unlock
-                    els.alarmPlayer.volume = 0;
-                    els.alarmPlayer.play().then(() => {
-                        els.alarmPlayer.pause();
-                        els.alarmPlayer.currentTime = 0;
-                        els.alarmPlayer.volume = 1.0; 
-                    }).catch(e => {});
-                }
-                initAudio(); // For beep fallback
+               unlockAllAudio();
             }
             
             state.isActive = !state.isActive;
@@ -582,12 +598,6 @@
             } else {
                 clearInterval(state.interval);
             }
-        }
-
-        function shouldPlayBgmNow() {
-            if (state.mode === 'clock') return true;
-            if (state.isActive && !state.isAlarmRinging) return true;
-            return false;
         }
 
         function tick() {
@@ -624,6 +634,7 @@
         }
 
         let alarmLoopInterval;
+        let alarmStopTimeout;
 
         function playAlarmLoop() {
             const type = state.soundType;
@@ -631,19 +642,17 @@
                 // OFF: only flash
                 state.isAlarmRinging = true;
                 startFlashing();
-                alarmLoopInterval = setTimeout(() => { stopAlarmIfRinging(); }, 5000);
+                alarmStopTimeout = setTimeout(() => { stopAlarmIfRinging(); }, 5000);
                 return;
             }
 
             state.isAlarmRinging = true;
             startFlashing();
             
+            // Initial Play
             playAlarmSound(); 
             
             let count = 0;
-            // 5秒程度 (Beepの場合は短いため回数で制御、ファイルの場合は再生時間)
-            // ファイル再生(mp3)の場合、loop=trueにしておいて5秒後に止めるのが良い
-            // Beep(電子音)の場合はsetIntervalで鳴らす
             
             if (type === 'Beep') {
                  alarmLoopInterval = setInterval(() => {
@@ -655,9 +664,10 @@
                     count++;
                 }, 1000);
             } else {
-                // Audio File Logic
-                // We use setTimeout to stop after 5s
-                alarmLoopInterval = setTimeout(() => {
+                // Audio File Logic: It is set to loop in HTML, so we just let it play for 5s then stop/pause
+                // playAlarmSound handles the play() call
+                // Just set timeout to stop
+                alarmStopTimeout = setTimeout(() => {
                     stopAlarmIfRinging();
                 }, 5000);
             }
@@ -670,9 +680,14 @@
                 if (state.soundType === 'Beep') {
                     clearInterval(alarmLoopInterval);
                 } else {
-                    clearTimeout(alarmLoopInterval);
-                    els.alarmPlayer.pause();
-                    els.alarmPlayer.currentTime = 0;
+                    // For file based
+                    clearTimeout(alarmStopTimeout);
+                    const elId = `sound-${state.soundType}`;
+                    const el = document.getElementById(elId);
+                    if(el) {
+                        el.pause();
+                        el.currentTime = 0;
+                    }
                 }
                 
                 stopFlashing();
@@ -878,6 +893,37 @@
             }
         }
 
+        function toggleFullscreen() {
+            if (document.body.classList.contains('fake-fullscreen')) {
+                document.body.classList.remove('fake-fullscreen');
+                return;
+            }
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                const requestFs = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+                if (requestFs) {
+                    requestFs.call(document.documentElement).catch(e => {
+                        document.body.classList.add('fake-fullscreen');
+                    });
+                } else {
+                    document.body.classList.add('fake-fullscreen');
+                }
+            } else {
+                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFs) exitFs.call(document);
+            }
+        }
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (document.body.classList.contains('fake-fullscreen')) {
+                    document.body.classList.remove('fake-fullscreen');
+                } else if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                    if (exitFs) exitFs.call(document);
+                }
+            }
+        });
+
         function toggleVisual() {
             state.visualType = state.visualType === 'bar' ? 'ring' : 'bar';
             if (state.mode !== 'clock') {
@@ -998,13 +1044,14 @@
                 playTone(880, 'square', 0.1, 0.15);
                 playTone(880, 'square', 0.4, 0.3);
             } else {
-                // File based
-                if(els.alarmPlayer.src.indexOf(type) === -1) {
-                    els.alarmPlayer.src = type;
+                // Play from individual pre-loaded element
+                const elId = `sound-${type}`;
+                const el = document.getElementById(elId);
+                if(el) {
+                    el.currentTime = 0;
+                    el.volume = 1.0;
+                    el.play().catch(e => console.log(e));
                 }
-                els.alarmPlayer.currentTime = 0;
-                els.alarmPlayer.volume = 1.0;
-                els.alarmPlayer.play().catch(e => {});
             }
         }
     </script>
