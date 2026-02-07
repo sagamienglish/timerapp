@@ -142,8 +142,9 @@
 </head>
 <body class="bg-white text-slate-800 transition-colors duration-300 min-h-screen flex flex-col overflow-hidden" id="app-body" onclick="stopAlarmIfRinging()">
 
-    <!-- BGM Player (Hidden) -->
+    <!-- Audio Players (Hidden) -->
     <audio id="bgm-player" loop></audio>
+    <audio id="alarm-player" loop></audio> <!-- Loop alarm for 5 sec duration control -->
 
     <!-- Header Controls -->
     <header class="p-4 flex flex-col sm:flex-row justify-between items-center gap-3 relative z-20 hide-in-fullscreen">
@@ -171,6 +172,7 @@
                     <option value="Happy.mp3">Happy</option>
                     <option value="Pop.mp3">Pop</option>
                     <option value="Slow.mp3">Slow</option>
+                    <option value="Timer.mp3">Timer</option>
                 </select>
                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
                     <i data-lucide="music" class="w-3 h-3 text-brand-500"></i>
@@ -179,20 +181,13 @@
 
             <div class="w-px h-5 bg-slate-300 mx-1"></div>
 
-            <!-- Alarm Sound Select (Modified) -->
+            <!-- Alarm Sound Select (File Based) -->
             <div class="relative group mx-1">
                 <select id="sound-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select Alarm Sound">
                     <option value="">Off</option>
-                    <option value="electronic">Beep</option>
-                    <option value="alarm">Alarm</option>
-                    <option value="chime">Chime</option>
-                    <option value="school">School</option>
-                    <option value="phone">Phone</option>
-                    <option value="arcade">Arcade</option>
-                    <option value="soft">Soft</option>
-                    <option value="whistle">Whistle</option>
-                    <option value="scifi">Sci-Fi</option>
-                    <option value="gong">Gong</option>
+                    <option value="Alarm.mp3" selected>Alarm</option>
+                    <option value="High.mp3">High</option>
+                    <option value="Up.mp3">Up</option>
                 </select>
                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
                     <i data-lucide="bell" class="w-3 h-3 text-slate-400"></i>
@@ -212,8 +207,6 @@
             <button onclick="toggleVisual()" class="p-2 rounded-xl hover:bg-white hover:text-brand-500 transition-all text-slate-500" title="Toggle Visual Style">
                 <i id="icon-visual" data-lucide="minus" class="w-4 h-4"></i>
             </button>
-
-            <!-- Sound Toggle Button Removed -->
 
             <button onclick="toggleTheme()" class="p-2 rounded-xl hover:bg-white hover:text-orange-500 transition-all text-slate-500" id="btn-theme" title="Toggle Dark/Light">
                 <i id="icon-theme" data-lucide="moon" class="w-4 h-4"></i>
@@ -311,8 +304,6 @@
 
     <!-- App Logic -->
     <script>
-        var audioCtx = null; 
-        
         const colors = [
             { hex: '#5A9CB5', rgb: '90 156 181' },   // Blue
             { hex: '#FACE68', rgb: '250 206 104' },  // Yellow
@@ -325,12 +316,11 @@
             theme: 'light',
             visualType: 'bar',
             mode: 'timer', 
-            isSoundOn: true,
-            soundType: 'electronic', // Default to BEEP if desired, or '' if OFF
+            soundType: 'Alarm.mp3', // Default file
             timeLeft: 300,
             initialTime: 300,
-            countUpTime: 0, // Stopwatch accumulation (ms)
-            stopwatchStartTime: 0, // Timestamp for calculation
+            countUpTime: 0, 
+            stopwatchStartTime: 0,
             isActive: false,
             interval: null,
             currentColor: colors[0],
@@ -359,8 +349,6 @@
                 btnToggle: document.getElementById('btn-toggle'),
                 iconPlayWrapper: document.getElementById('icon-play-wrapper'),
                 iconPauseWrapper: document.getElementById('icon-pause-wrapper'),
-                // btnSound removed
-                // iconSound removed
                 btnTheme: document.getElementById('btn-theme'),
                 iconTheme: document.getElementById('icon-theme'),
                 iconVisual: document.getElementById('icon-visual'),
@@ -368,7 +356,9 @@
                 bgmSelect: document.getElementById('bgm-select'), 
                 quickBtns: document.querySelectorAll('.quick-btn'),
                 presetBtns: document.querySelectorAll('.preset-btn'),
-                colorMenu: document.getElementById('color-menu')
+                colorMenu: document.getElementById('color-menu'),
+                bgmPlayer: document.getElementById('bgm-player'),
+                alarmPlayer: document.getElementById('alarm-player')
             };
 
             generateAppIcons(); 
@@ -402,22 +392,16 @@
             canvas.width = 512;
             canvas.height = 512;
             const ctx = canvas.getContext('2d');
-
             ctx.fillStyle = state.currentColor.hex;
             ctx.beginPath();
-            if (ctx.roundRect) {
-                ctx.roundRect(0, 0, 512, 512, 120);
-            } else {
-                ctx.rect(0, 0, 512, 512); 
-            }
+            if (ctx.roundRect) ctx.roundRect(0, 0, 512, 512, 120);
+            else ctx.rect(0, 0, 512, 512); 
             ctx.fill();
-
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 40;
             ctx.beginPath();
             ctx.arc(256, 256, 160, 0, Math.PI * 2);
             ctx.stroke();
-
             ctx.beginPath();
             ctx.moveTo(256, 156);
             ctx.lineTo(256, 256);
@@ -425,7 +409,6 @@
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.stroke();
-
             const dataUrl = canvas.toDataURL('image/png');
             const favicon = document.getElementById('favicon');
             const appleIcon = document.getElementById('apple-icon');
@@ -433,9 +416,9 @@
             if(appleIcon) appleIcon.href = dataUrl;
         }
 
-        // --- BGM Logic ---
+        // --- BGM Logic (With Fade Out) ---
         function updateBgm() {
-            const player = document.getElementById('bgm-player');
+            const player = els.bgmPlayer;
             
             if (!state.selectedBgm) {
                 player.pause();
@@ -444,15 +427,19 @@
 
             if (player.getAttribute('src') !== state.selectedBgm) {
                 player.src = state.selectedBgm;
+                player.volume = 1.0; // Reset volume on change
             }
 
             let shouldPlay = false;
 
             if (state.mode === 'clock') {
                 shouldPlay = true;
+                player.volume = 1.0; // Ensure full volume in clock mode
             } else {
                 if (state.isActive && !state.isAlarmRinging) {
                     shouldPlay = true;
+                    // Reset volume if not fading out (handled in tick)
+                    if (state.timeLeft > 4) player.volume = 1.0; 
                 }
             }
 
@@ -506,10 +493,8 @@
         function setColor(colorObj) {
             state.currentColor = colorObj;
             document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
-            
             renderColorMenu();
             els.colorMenu.classList.add('hidden');
-            
             generateAppIcons();
             applyThemeStyle();
             updateDisplay();
@@ -520,16 +505,6 @@
                 document.body.classList.add('is-fullscreen');
             } else {
                 document.body.classList.remove('is-fullscreen');
-            }
-        }
-
-        function initAudio() {
-            if (!audioCtx) {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
             }
         }
 
@@ -546,20 +521,16 @@
         function toggleTimer() {
             if (state.mode === 'clock') return;
             
-            initAudio();
             state.isActive = !state.isActive;
             updatePlayButton();
             updateBgm(); 
             
             if (state.isActive) {
                 if (state.mode === 'stopwatch') {
-                    // Stopwatch logic: High precision
-                    // Calc start time based on current accumulated time
                     const now = Date.now();
                     state.stopwatchStartTime = now - state.countUpTime;
-                    state.interval = setInterval(tickStopwatch, 33); // ~30fps
+                    state.interval = setInterval(tickStopwatch, 33); 
                 } else {
-                    // Timer logic: Simple 1s
                     state.interval = setInterval(tick, 1000);
                 }
             } else {
@@ -574,16 +545,29 @@
                 state.isActive = false;
                 clearInterval(state.interval);
                 updatePlayButton();
-                updateBgm(); 
+                
+                // Stop BGM immediately at end (or ensure it's volume 0)
+                if (els.bgmPlayer) els.bgmPlayer.pause();
+                
                 playAlarmLoop(); 
             } else {
                 state.timeLeft--;
+                
+                // --- Fade Out Logic ---
+                if (state.selectedBgm && els.bgmPlayer) {
+                     if (state.timeLeft <= 4 && state.timeLeft > 0) {
+                         // Fade out: 4s->0.75, 3s->0.5, 2s->0.25, 1s->0
+                         // Slightly smoother: volume = time / 5
+                         els.bgmPlayer.volume = state.timeLeft / 5;
+                     } else if (state.timeLeft > 4) {
+                         els.bgmPlayer.volume = 1.0;
+                     }
+                }
             }
             updateDisplay();
         }
 
         function tickStopwatch() {
-            // Stopwatch Logic (ms based)
             const now = Date.now();
             state.countUpTime = now - state.stopwatchStartTime;
             updateDisplay();
@@ -592,32 +576,67 @@
         let alarmLoopInterval;
 
         function playAlarmLoop() {
-            // isSoundOnフラグの代わりにsoundTypeをチェック
-            if (!state.soundType) return;
+            const type = state.soundType;
+            if (!type) {
+                // If OFF, just flash
+                state.isAlarmRinging = true;
+                startFlashing();
+                // Auto stop flashing after 5s if no sound
+                alarmLoopInterval = setTimeout(() => {
+                     stopAlarmIfRinging();
+                }, 5000);
+                return;
+            }
+
             state.isAlarmRinging = true;
+            startFlashing();
             
-            playAlarmSound(); 
+            // Set source and play
+            els.alarmPlayer.src = type;
+            els.alarmPlayer.volume = 1.0;
+            els.alarmPlayer.play().catch(e => console.log(e));
             
-            let count = 0;
-            alarmLoopInterval = setInterval(() => {
-                // 5秒程度で止める
-                if (!state.isAlarmRinging || count >= 4) { 
-                    stopAlarmIfRinging();
-                    return;
-                }
-                playAlarmSound();
-                count++;
-            }, 1000);
+            // Stop after 5 seconds
+            alarmLoopInterval = setTimeout(() => {
+                stopAlarmIfRinging();
+            }, 5000);
         }
 
         function stopAlarmIfRinging() {
             if (state.isAlarmRinging) {
                 state.isAlarmRinging = false;
-                clearInterval(alarmLoopInterval);
+                clearTimeout(alarmLoopInterval); // Clear the timeout
+                els.alarmPlayer.pause();
+                els.alarmPlayer.currentTime = 0;
+                
+                stopFlashing();
                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
-                updateDisplay();
+                
+                // Restore BGM volume if it was faded out
+                if (els.bgmPlayer) els.bgmPlayer.volume = 1.0;
                 updateBgm(); 
+                updateDisplay();
             }
+        }
+
+        let flashInterval;
+        function startFlashing() {
+            if (flashInterval) clearInterval(flashInterval);
+            
+            flashInterval = setInterval(() => {
+                if (!state.isAlarmRinging) {
+                    stopFlashing();
+                    return;
+                }
+                // Text Flash Logic (handled in updateDisplay mostly, but can toggle here)
+                els.timeDisplay.classList.toggle('opacity-50');
+            }, 250);
+        }
+
+        function stopFlashing() {
+            clearInterval(flashInterval);
+            els.timeDisplay.classList.remove('opacity-50');
+            applyThemeStyle();
         }
 
         function resetTimer() {
@@ -625,7 +644,12 @@
             clearInterval(state.interval);
             stopAlarmIfRinging();
             updatePlayButton();
-            updateBgm(); 
+            
+            // Reset BGM volume
+            if (els.bgmPlayer) {
+                els.bgmPlayer.volume = 1.0;
+                els.bgmPlayer.pause(); // Reset stops BGM
+            }
             
             if (state.mode === 'timer') {
                 state.timeLeft = state.initialTime;
@@ -653,7 +677,10 @@
             state.timeLeft = seconds;
             state.initialTime = Math.max(1, seconds);
             updatePlayButton();
-            updateBgm(); 
+            if (els.bgmPlayer) {
+                 els.bgmPlayer.volume = 1.0;
+                 els.bgmPlayer.pause();
+            }
             updateDisplay();
         }
 
@@ -688,7 +715,7 @@
             }
 
             renderColorMenu();
-            updateBgm(); // Check BGM for new mode
+            updateBgm(); 
             updateDisplay();
         }
 
@@ -720,10 +747,7 @@
                 els.barProgress.style.opacity = '0';
                 els.visualRing.style.opacity = '0';
                 
-                // DSEGフォント (Clock Mode Only) - まっすぐなスタイル
-                // クロックモードではブランドカラーを使用 (白を選んでいれば白になる)
                 els.timeDisplay.className = `relative z-10 font-dseg leading-none select-none transition-colors duration-200 cursor-default flex items-baseline justify-center text-brand-500`;
-                // サイズ調整: 10%縮小
                 els.timeDisplay.style.fontSize = "clamp(5rem, 22vw, 20rem)";
 
                 els.timeDisplay.innerHTML = `
@@ -735,7 +759,7 @@
                 return;
             } 
             
-            // Timer/Stopwatch Mode (Outfit font)
+            // Timer/Stopwatch Mode
             els.barProgress.style.opacity = '1';
             els.visualRing.style.opacity = state.visualType === 'ring' ? '1' : '0';
             
@@ -743,23 +767,20 @@
             
             // Logic split
             if (state.mode === 'stopwatch') {
-                 // Stopwatch (Count Up) Display: MM:SS.ms (no Hour)
                  const totalMs = state.countUpTime;
                  const m = Math.floor(totalMs / 60000);
                  const s = Math.floor((totalMs % 60000) / 1000);
-                 const ms = Math.floor((totalMs % 1000) / 10); // 2 digits (0-99)
+                 const ms = Math.floor((totalMs % 1000) / 10); 
 
                  const mStr = m.toString().padStart(2, '0');
                  const sStr = s.toString().padStart(2, '0');
                  const msStr = ms.toString().padStart(2, '0');
 
-                 // Longer string, smaller font
                  fontSizeClass = "clamp(4rem, 20vw, 18rem)";
                  
                  els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span><span class="text-[0.5em] opacity-80 ml-1">.${msStr}</span>`;
             
             } else {
-                 // Timer (Count Down): MM:SS
                  const t = state.timeLeft;
                  const m = Math.floor(t / 60);
                  const s = t % 60;
@@ -773,7 +794,6 @@
             els.timeDisplay.className = `relative z-10 font-extrabold tabular-nums leading-none select-none transition-colors duration-200 cursor-default flex items-center justify-center gap-1 sm:gap-2 ${textColorClass}`;
             els.timeDisplay.style.fontSize = fontSizeClass;
 
-            // Progress Bar (Timer Only)
             let pct = 100;
             if (state.mode === 'timer') {
                 pct = (state.timeLeft / state.initialTime) * 100;
@@ -788,16 +808,15 @@
             els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
             els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
             
-            // 文字だけ赤点滅
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
-                 els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
+                 els.timeDisplay.classList.add('text-red-500');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
                  
                  els.barProgress.classList.remove('bg-brand-500');
                  els.barProgress.classList.add('bg-red-500');
                  els.ringProgress.setAttribute('stroke', '#ef4444');
             } else {
-                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
+                 els.timeDisplay.classList.remove('text-red-500');
                  els.barProgress.classList.remove('bg-red-500');
                  els.barProgress.classList.add('bg-brand-500');
                  els.ringProgress.setAttribute('stroke', 'rgb(var(--brand-rgb))');
@@ -927,93 +946,8 @@
             setMode(state.mode); 
         }
 
-        // Sound Toggle function removed
+        // Toggle Sound function removed (Using Select)
 
-        function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
-            if (!state.isSoundOn || !audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            
-            osc.type = type;
-            osc.frequency.value = freq;
-            
-            gain.gain.setValueAtTime(vol, audioCtx.currentTime + startTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-            
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.start(audioCtx.currentTime + startTime);
-            osc.stop(audioCtx.currentTime + startTime + duration);
-        }
-
-        function playAlarmSound() {
-            initAudio();
-            const type = state.soundType;
-            if (!type) return; // If Off, do nothing
-
-            if (type === 'electronic') {
-                playTone(880, 'square', 0.1, 0);
-                playTone(880, 'square', 0.1, 0.15);
-                playTone(880, 'square', 0.4, 0.3);
-            } 
-            else if (type === 'alarm') {
-                for(let i=0; i<4; i++) {
-                    playTone(400, 'sawtooth', 0.1, i*0.2);
-                    playTone(300, 'sawtooth', 0.1, i*0.2 + 0.1);
-                }
-            }
-            else if (type === 'chime') {
-                playTone(659.25, 'sine', 1.5, 0);
-                playTone(329.63, 'sine', 1.5, 0);
-                setTimeout(() => {
-                    playTone(523.25, 'sine', 2.0, 0); 
-                    playTone(261.63, 'sine', 2.0, 0);
-                }, 800);
-            }
-            else if (type === 'school') {
-                for(let i=0; i<15; i++) {
-                    playTone(600 + (i%2)*100, 'square', 0.08, i*0.06, 0.05);
-                }
-            }
-            else if (type === 'phone') {
-                for(let i=0; i<10; i++) {
-                    playTone(800, 'sine', 0.05, i*0.05, 0.1);
-                    playTone(840, 'sine', 0.05, i*0.05, 0.1);
-                }
-            }
-            else if (type === 'arcade') {
-                playTone(440, 'square', 0.1, 0);
-                playTone(554, 'square', 0.1, 0.1);
-                playTone(659, 'square', 0.1, 0.2);
-                playTone(880, 'square', 0.4, 0.3);
-            }
-            else if (type === 'soft') {
-                playTone(440, 'sine', 1.0, 0, 0.2);
-                setTimeout(() => playTone(554, 'sine', 1.0, 0, 0.2), 200);
-            }
-            else if (type === 'whistle') {
-                playTone(1200, 'triangle', 0.1, 0, 0.15);
-                playTone(1000, 'triangle', 0.5, 0.1, 0.15);
-            }
-            else if (type === 'scifi') {
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.5);
-                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.start();
-                osc.stop(audioCtx.currentTime + 0.5);
-            }
-            else if (type === 'gong') {
-                playTone(100, 'sine', 3.0, 0, 0.5);
-                playTone(150, 'square', 2.0, 0, 0.1); 
-                playTone(200, 'triangle', 2.5, 0, 0.1);
-            }
-        }
     </script>
 </body>
 </html>
