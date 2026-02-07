@@ -167,12 +167,12 @@
             <!-- BGM Select -->
             <div class="relative group mx-1">
                 <select id="bgm-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select BGM">
-                    <option value="">Off</option>
+                    <option value="">OFF</option>
+                    <option value="Timer.mp3">Timer</option>
                     <option value="Chill.mp3">Chill</option>
                     <option value="Happy.mp3">Happy</option>
                     <option value="Pop.mp3">Pop</option>
                     <option value="Slow.mp3">Slow</option>
-                    <option value="Timer.mp3">Timer</option>
                 </select>
                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
                     <i data-lucide="music" class="w-3 h-3 text-brand-500"></i>
@@ -184,10 +184,11 @@
             <!-- Alarm Sound Select (File Based) -->
             <div class="relative group mx-1">
                 <select id="sound-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select Alarm Sound">
-                    <option value="">Off</option>
+                    <option value="">OFF</option>
                     <option value="Alarm.mp3" selected>Alarm</option>
                     <option value="High.mp3">High</option>
                     <option value="Up.mp3">Up</option>
+                    <option value="Beep">Beep</option> <!-- 旧Beepを念のため残す場合はこれ -->
                 </select>
                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
                     <i data-lucide="bell" class="w-3 h-3 text-slate-400"></i>
@@ -207,6 +208,8 @@
             <button onclick="toggleVisual()" class="p-2 rounded-xl hover:bg-white hover:text-brand-500 transition-all text-slate-500" title="Toggle Visual Style">
                 <i id="icon-visual" data-lucide="minus" class="w-4 h-4"></i>
             </button>
+
+            <!-- Sound Toggle Button Removed -->
 
             <button onclick="toggleTheme()" class="p-2 rounded-xl hover:bg-white hover:text-orange-500 transition-all text-slate-500" id="btn-theme" title="Toggle Dark/Light">
                 <i id="icon-theme" data-lucide="moon" class="w-4 h-4"></i>
@@ -304,6 +307,9 @@
 
     <!-- App Logic -->
     <script>
+        // Global
+        var audioCtx = null; 
+        
         const colors = [
             { hex: '#5A9CB5', rgb: '90 156 181' },   // Blue
             { hex: '#FACE68', rgb: '250 206 104' },  // Yellow
@@ -316,7 +322,7 @@
             theme: 'light',
             visualType: 'bar',
             mode: 'timer', 
-            soundType: 'Alarm.mp3', // Default file
+            soundType: 'Alarm.mp3', // Default
             timeLeft: 300,
             initialTime: 300,
             countUpTime: 0, 
@@ -368,9 +374,13 @@
             // Event Listeners
             els.soundSelect.addEventListener('change', (e) => {
                 state.soundType = e.target.value;
+                // Preload on selection to help iOS
+                if(state.soundType && state.soundType !== 'Beep' && state.soundType !== '') {
+                    els.alarmPlayer.src = state.soundType;
+                    els.alarmPlayer.load();
+                }
             });
             
-            // BGM Listener
             els.bgmSelect.addEventListener('change', (e) => {
                 state.selectedBgm = e.target.value;
                 updateBgm();
@@ -416,7 +426,7 @@
             if(appleIcon) appleIcon.href = dataUrl;
         }
 
-        // --- BGM Logic (With Fade Out) ---
+        // --- BGM Logic ---
         function updateBgm() {
             const player = els.bgmPlayer;
             
@@ -427,25 +437,24 @@
 
             if (player.getAttribute('src') !== state.selectedBgm) {
                 player.src = state.selectedBgm;
-                player.volume = 1.0; // Reset volume on change
+                player.volume = 1.0; 
             }
 
             let shouldPlay = false;
 
             if (state.mode === 'clock') {
                 shouldPlay = true;
-                player.volume = 1.0; // Ensure full volume in clock mode
+                player.volume = 1.0; 
             } else {
                 if (state.isActive && !state.isAlarmRinging) {
                     shouldPlay = true;
-                    // Reset volume if not fading out (handled in tick)
                     if (state.timeLeft > 4) player.volume = 1.0; 
                 }
             }
 
             if (shouldPlay) {
                 if (player.paused) {
-                    player.play().catch(e => console.log('Playback prevented:', e));
+                    player.play().catch(e => {});
                 }
             } else {
                 player.pause();
@@ -493,8 +502,10 @@
         function setColor(colorObj) {
             state.currentColor = colorObj;
             document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
+            
             renderColorMenu();
             els.colorMenu.classList.add('hidden');
+            
             generateAppIcons();
             applyThemeStyle();
             updateDisplay();
@@ -505,6 +516,17 @@
                 document.body.classList.add('is-fullscreen');
             } else {
                 document.body.classList.remove('is-fullscreen');
+            }
+        }
+
+        function initAudio() {
+            // Only needed for Beep sound fallback
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
             }
         }
 
@@ -520,6 +542,30 @@
 
         function toggleTimer() {
             if (state.mode === 'clock') return;
+            
+            // iOS Hack for Audio
+            if (!state.isActive) {
+                if (state.selectedBgm && els.bgmPlayer) {
+                     els.bgmPlayer.play().then(() => {
+                         if (!shouldPlayBgmNow()) els.bgmPlayer.pause();
+                     }).catch(e => {});
+                }
+                if (state.soundType && els.alarmPlayer && state.soundType !== 'Beep' && state.soundType !== '') {
+                    // Check if current src is set
+                    const currentSrc = els.alarmPlayer.getAttribute('src');
+                    if(!currentSrc || currentSrc !== state.soundType) {
+                        els.alarmPlayer.src = state.soundType;
+                    }
+                    // Muted play for unlock
+                    els.alarmPlayer.volume = 0;
+                    els.alarmPlayer.play().then(() => {
+                        els.alarmPlayer.pause();
+                        els.alarmPlayer.currentTime = 0;
+                        els.alarmPlayer.volume = 1.0; 
+                    }).catch(e => {});
+                }
+                initAudio(); // For beep fallback
+            }
             
             state.isActive = !state.isActive;
             updatePlayButton();
@@ -538,31 +584,35 @@
             }
         }
 
+        function shouldPlayBgmNow() {
+            if (state.mode === 'clock') return true;
+            if (state.isActive && !state.isAlarmRinging) return true;
+            return false;
+        }
+
         function tick() {
-            // Timer Logic
-            if (state.timeLeft <= 0) {
-                state.timeLeft = 0;
-                state.isActive = false;
-                clearInterval(state.interval);
-                updatePlayButton();
-                
-                // Stop BGM immediately at end (or ensure it's volume 0)
-                if (els.bgmPlayer) els.bgmPlayer.pause();
-                
-                playAlarmLoop(); 
-            } else {
-                state.timeLeft--;
-                
-                // --- Fade Out Logic ---
-                if (state.selectedBgm && els.bgmPlayer) {
-                     if (state.timeLeft <= 4 && state.timeLeft > 0) {
-                         // Fade out: 4s->0.75, 3s->0.5, 2s->0.25, 1s->0
-                         // Slightly smoother: volume = time / 5
-                         els.bgmPlayer.volume = state.timeLeft / 5;
-                     } else if (state.timeLeft > 4) {
-                         els.bgmPlayer.volume = 1.0;
-                     }
+            if (state.mode === 'timer') {
+                if (state.timeLeft <= 0) {
+                    state.timeLeft = 0;
+                    state.isActive = false;
+                    clearInterval(state.interval);
+                    updatePlayButton();
+                    updateBgm(); // Stop BGM
+                    playAlarmLoop(); 
+                } else {
+                    state.timeLeft--;
+                    
+                    // Fade Out BGM
+                    if (state.selectedBgm && els.bgmPlayer) {
+                         if (state.timeLeft <= 4 && state.timeLeft > 0) {
+                             els.bgmPlayer.volume = state.timeLeft / 5;
+                         } else if (state.timeLeft > 4) {
+                             els.bgmPlayer.volume = 1.0;
+                         }
+                    }
                 }
+            } else {
+                state.countUpTime++;
             }
             updateDisplay();
         }
@@ -577,42 +627,57 @@
 
         function playAlarmLoop() {
             const type = state.soundType;
-            if (!type) {
-                // If OFF, just flash
+            if (!type || type === '') {
+                // OFF: only flash
                 state.isAlarmRinging = true;
                 startFlashing();
-                // Auto stop flashing after 5s if no sound
-                alarmLoopInterval = setTimeout(() => {
-                     stopAlarmIfRinging();
-                }, 5000);
+                alarmLoopInterval = setTimeout(() => { stopAlarmIfRinging(); }, 5000);
                 return;
             }
 
             state.isAlarmRinging = true;
             startFlashing();
             
-            // Set source and play
-            els.alarmPlayer.src = type;
-            els.alarmPlayer.volume = 1.0;
-            els.alarmPlayer.play().catch(e => console.log(e));
+            playAlarmSound(); 
             
-            // Stop after 5 seconds
-            alarmLoopInterval = setTimeout(() => {
-                stopAlarmIfRinging();
-            }, 5000);
+            let count = 0;
+            // 5秒程度 (Beepの場合は短いため回数で制御、ファイルの場合は再生時間)
+            // ファイル再生(mp3)の場合、loop=trueにしておいて5秒後に止めるのが良い
+            // Beep(電子音)の場合はsetIntervalで鳴らす
+            
+            if (type === 'Beep') {
+                 alarmLoopInterval = setInterval(() => {
+                    if (!state.isAlarmRinging || count >= 4) { 
+                        stopAlarmIfRinging();
+                        return;
+                    }
+                    playAlarmSound();
+                    count++;
+                }, 1000);
+            } else {
+                // Audio File Logic
+                // We use setTimeout to stop after 5s
+                alarmLoopInterval = setTimeout(() => {
+                    stopAlarmIfRinging();
+                }, 5000);
+            }
         }
 
         function stopAlarmIfRinging() {
             if (state.isAlarmRinging) {
                 state.isAlarmRinging = false;
-                clearTimeout(alarmLoopInterval); // Clear the timeout
-                els.alarmPlayer.pause();
-                els.alarmPlayer.currentTime = 0;
+                
+                if (state.soundType === 'Beep') {
+                    clearInterval(alarmLoopInterval);
+                } else {
+                    clearTimeout(alarmLoopInterval);
+                    els.alarmPlayer.pause();
+                    els.alarmPlayer.currentTime = 0;
+                }
                 
                 stopFlashing();
                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                 
-                // Restore BGM volume if it was faded out
                 if (els.bgmPlayer) els.bgmPlayer.volume = 1.0;
                 updateBgm(); 
                 updateDisplay();
@@ -628,7 +693,6 @@
                     stopFlashing();
                     return;
                 }
-                // Text Flash Logic (handled in updateDisplay mostly, but can toggle here)
                 els.timeDisplay.classList.toggle('opacity-50');
             }, 250);
         }
@@ -644,12 +708,7 @@
             clearInterval(state.interval);
             stopAlarmIfRinging();
             updatePlayButton();
-            
-            // Reset BGM volume
-            if (els.bgmPlayer) {
-                els.bgmPlayer.volume = 1.0;
-                els.bgmPlayer.pause(); // Reset stops BGM
-            }
+            updateBgm(); 
             
             if (state.mode === 'timer') {
                 state.timeLeft = state.initialTime;
@@ -677,10 +736,7 @@
             state.timeLeft = seconds;
             state.initialTime = Math.max(1, seconds);
             updatePlayButton();
-            if (els.bgmPlayer) {
-                 els.bgmPlayer.volume = 1.0;
-                 els.bgmPlayer.pause();
-            }
+            updateBgm(); 
             updateDisplay();
         }
 
@@ -765,7 +821,6 @@
             
             let fontSizeClass = "clamp(6rem, 28vw, 24rem)";
             
-            // Logic split
             if (state.mode === 'stopwatch') {
                  const totalMs = state.countUpTime;
                  const m = Math.floor(totalMs / 60000);
@@ -809,50 +864,19 @@
             els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
             
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
-                 els.timeDisplay.classList.add('text-red-500');
+                 els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
                  
                  els.barProgress.classList.remove('bg-brand-500');
                  els.barProgress.classList.add('bg-red-500');
                  els.ringProgress.setAttribute('stroke', '#ef4444');
             } else {
-                 els.timeDisplay.classList.remove('text-red-500');
+                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                  els.barProgress.classList.remove('bg-red-500');
                  els.barProgress.classList.add('bg-brand-500');
                  els.ringProgress.setAttribute('stroke', 'rgb(var(--brand-rgb))');
             }
         }
-
-        function toggleFullscreen() {
-            if (document.body.classList.contains('fake-fullscreen')) {
-                document.body.classList.remove('fake-fullscreen');
-                return;
-            }
-            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-                const requestFs = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
-                if (requestFs) {
-                    requestFs.call(document.documentElement).catch(e => {
-                        document.body.classList.add('fake-fullscreen');
-                    });
-                } else {
-                    document.body.classList.add('fake-fullscreen');
-                }
-            } else {
-                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
-                if (exitFs) exitFs.call(document);
-            }
-        }
-        
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (document.body.classList.contains('fake-fullscreen')) {
-                    document.body.classList.remove('fake-fullscreen');
-                } else if (document.fullscreenElement || document.webkitFullscreenElement) {
-                    const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
-                    if (exitFs) exitFs.call(document);
-                }
-            }
-        });
 
         function toggleVisual() {
             state.visualType = state.visualType === 'bar' ? 'ring' : 'bar';
@@ -946,8 +970,43 @@
             setMode(state.mode); 
         }
 
-        // Toggle Sound function removed (Using Select)
+        // --- Sound Generator (for Beep) ---
+        function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = type;
+            osc.frequency.value = freq;
+            
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime + startTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start(audioCtx.currentTime + startTime);
+            osc.stop(audioCtx.currentTime + startTime + duration);
+        }
 
+        function playAlarmSound() {
+            initAudio();
+            const type = state.soundType;
+
+            if (type === 'Beep') {
+                playTone(880, 'square', 0.1, 0);
+                playTone(880, 'square', 0.1, 0.15);
+                playTone(880, 'square', 0.4, 0.3);
+            } else {
+                // File based
+                if(els.alarmPlayer.src.indexOf(type) === -1) {
+                    els.alarmPlayer.src = type;
+                }
+                els.alarmPlayer.currentTime = 0;
+                els.alarmPlayer.volume = 1.0;
+                els.alarmPlayer.play().catch(e => {});
+            }
+        }
     </script>
 </body>
 </html>
