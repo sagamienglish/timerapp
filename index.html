@@ -142,6 +142,9 @@
 </head>
 <body class="bg-white text-slate-800 transition-colors duration-300 min-h-screen flex flex-col overflow-hidden" id="app-body" onclick="stopAlarmIfRinging()">
 
+    <!-- BGM Player (Hidden) -->
+    <audio id="bgm-player" loop></audio>
+
     <!-- Header Controls -->
     <header class="p-4 flex flex-col sm:flex-row justify-between items-center gap-3 relative z-20 hide-in-fullscreen">
         <!-- Mode Tabs -->
@@ -160,9 +163,25 @@
         <!-- Right Side Settings -->
         <div class="flex gap-2 items-center bg-slate-100 p-2 rounded-2xl border border-slate-200 flex-wrap justify-center" id="settings-container">
             
-            <!-- Sound Select -->
+            <!-- BGM Select (New) -->
             <div class="relative group mx-1">
-                <select id="sound-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select Sound">
+                <select id="bgm-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select BGM">
+                    <option value="">BGM Off</option>
+                    <option value="Chill.mp3">Chill</option>
+                    <option value="Happy.mp3">Happy</option>
+                    <option value="Pop.mp3">Pop</option>
+                    <option value="Slow.mp3">Slow</option>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
+                    <i data-lucide="music" class="w-3 h-3 text-brand-500"></i>
+                </div>
+            </div>
+
+            <div class="w-px h-5 bg-slate-300 mx-1"></div>
+
+            <!-- Alarm Sound Select -->
+            <div class="relative group mx-1">
+                <select id="sound-select" class="appearance-none bg-transparent pl-2 pr-6 py-1 text-xs font-bold focus:outline-none cursor-pointer text-center text-slate-600 hover:text-brand-600 uppercase tracking-wider max-w-[80px] sm:max-w-none" title="Select Alarm Sound">
                     <option value="electronic">Beep</option>
                     <option value="alarm">Alarm</option>
                     <option value="chime">Chime</option>
@@ -175,7 +194,7 @@
                     <option value="gong">Gong</option>
                 </select>
                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1">
-                    <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
+                    <i data-lucide="bell" class="w-3 h-3 text-slate-400"></i>
                 </div>
             </div>
 
@@ -243,7 +262,7 @@
             
             <!-- Play/Pause & Reset -->
             <div id="play-reset-buttons" class="flex items-center gap-6">
-                <button id="btn-toggle" onclick="toggleTimer()" class="group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-amber-400 hover:bg-amber-500 text-white ring-4 ring-transparent hover:ring-amber-200">
+                <button id="btn-toggle" onclick="toggleTimer()" class="group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-brand-500 hover:bg-brand-400 text-white ring-4 ring-transparent hover:ring-amber-200">
                     <div id="icon-play-wrapper" class="flex items-center justify-center">
                         <i data-lucide="play" class="w-12 h-12 ml-1 fill-current group-hover:scale-110 transition-transform"></i>
                     </div>
@@ -300,7 +319,6 @@
             { hex: '#FACE68', rgb: '250 206 104' },  // Yellow
             { hex: '#FAAC68', rgb: '250 172 104' },  // Orange
             { hex: '#FA6868', rgb: '250 104 104' },  // Red
-            { hex: '#6594B1', rgb: '101 148 177' },  // Blue Grey
             { hex: '#DDAED3', rgb: '221 174 211' }   // Lavender
         ];
 
@@ -346,6 +364,7 @@
                 iconTheme: document.getElementById('icon-theme'),
                 iconVisual: document.getElementById('icon-visual'),
                 soundSelect: document.getElementById('sound-select'),
+                bgmSelect: document.getElementById('bgm-select'), // BGM Select
                 quickBtns: document.querySelectorAll('.quick-btn'),
                 presetBtns: document.querySelectorAll('.preset-btn'),
                 colorMenu: document.getElementById('color-menu')
@@ -355,8 +374,24 @@
             renderColorMenu();
             lucide.createIcons();
             
+            // Event Listeners
             els.soundSelect.addEventListener('change', (e) => {
                 state.soundType = e.target.value;
+            });
+            
+            // BGM Listener
+            const bgmPlayer = document.getElementById('bgm-player');
+            els.bgmSelect.addEventListener('change', (e) => {
+                const file = e.target.value;
+                if (file) {
+                    bgmPlayer.src = file;
+                    // Note: Browsers may block play() if not triggered by user action directly.
+                    // Since this is in a 'change' event which comes from user interaction, it should work.
+                    bgmPlayer.play().catch(e => console.log('Playback prevented: ', e));
+                } else {
+                    bgmPlayer.pause();
+                    bgmPlayer.src = "";
+                }
             });
 
             document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -409,13 +444,25 @@
         function renderColorMenu() {
             if (!els.colorMenu) return;
             els.colorMenu.innerHTML = '';
-            colors.forEach((c, idx) => {
+            
+            let currentPalette = [...colors];
+            
+            if (state.mode === 'clock' && state.theme === 'dark') {
+                currentPalette.push({ hex: '#ffffff', rgb: '255 255 255' });
+            }
+
+            currentPalette.forEach((c) => {
                 const dot = document.createElement('div');
                 dot.className = `color-dot ${c.hex === state.currentColor.hex ? 'active' : ''}`;
                 dot.style.backgroundColor = c.hex;
+                
+                if (c.hex === '#ffffff') {
+                    dot.style.border = '2px solid #555';
+                }
+
                 dot.onclick = (e) => {
                     e.stopPropagation();
-                    setColor(idx);
+                    setColor(c);
                 };
                 els.colorMenu.appendChild(dot);
             });
@@ -432,11 +479,13 @@
             }
         });
 
-        function setColor(idx) {
-            state.currentColor = colors[idx];
+        function setColor(colorObj) {
+            state.currentColor = colorObj;
             document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
+            
             renderColorMenu();
             els.colorMenu.classList.add('hidden');
+            
             generateAppIcons();
             applyThemeStyle();
             updateDisplay();
@@ -511,7 +560,6 @@
             
             let count = 0;
             alarmLoopInterval = setInterval(() => {
-                // 5秒程度で止める
                 if (!state.isAlarmRinging || count >= 4) { 
                     stopAlarmIfRinging();
                     return;
@@ -525,8 +573,6 @@
             if (state.isAlarmRinging) {
                 state.isAlarmRinging = false;
                 clearInterval(alarmLoopInterval);
-                
-                // アラーム停止処理
                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                 updateDisplay();
             }
@@ -597,6 +643,7 @@
                 els.playResetButtons.classList.add('hidden');
             }
 
+            renderColorMenu();
             updateDisplay();
         }
 
@@ -628,9 +675,7 @@
                 els.barProgress.style.opacity = '0';
                 els.visualRing.style.opacity = '0';
                 
-                // DSEGフォント (Clock Mode Only) - まっすぐなスタイル
-                els.timeDisplay.className = `relative z-10 font-dseg leading-none select-none transition-colors duration-200 cursor-default flex items-baseline justify-center ${textColorClass}`;
-                // サイズ調整: 10%縮小
+                els.timeDisplay.className = `relative z-10 font-dseg leading-none select-none transition-colors duration-200 cursor-default flex items-baseline justify-center text-brand-500`;
                 els.timeDisplay.style.fontSize = "clamp(5rem, 22vw, 20rem)";
 
                 els.timeDisplay.innerHTML = `
@@ -642,7 +687,6 @@
                 return;
             } 
             
-            // Timer/Stopwatch Mode (Outfit font)
             els.barProgress.style.opacity = '1';
             els.visualRing.style.opacity = state.visualType === 'ring' ? '1' : '0';
             
@@ -672,10 +716,9 @@
             els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
             els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
             
-            // 文字だけ赤点滅
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
-                 els.timeDisplay.classList.remove('text-white', 'text-slate-800');
+                 els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
                  
                  els.barProgress.classList.remove('bg-brand-500');
                  els.barProgress.classList.add('bg-red-500');
@@ -738,6 +781,7 @@
         function toggleTheme() {
             state.theme = state.theme === 'light' ? 'dark' : 'light';
             applyThemeStyle();
+            renderColorMenu();
             updateDisplay();
         }
 
