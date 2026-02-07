@@ -36,7 +36,7 @@
                     },
                     fontFamily: {
                         sans: ['Outfit', 'sans-serif'],
-                        dseg: ['"DSEG7 Classic"', 'sans-serif'], // DSEGフォント定義
+                        dseg: ['"DSEG7 Classic"', 'sans-serif'],
                     }
                 }
             }
@@ -67,11 +67,11 @@
             font-variant-numeric: tabular-nums;
         }
 
-        /* DSEGフォント調整 (斜体を解除) */
+        /* DSEGフォント調整 */
         .font-dseg {
             font-family: 'DSEG7 Classic', sans-serif;
             font-weight: 700;
-            font-style: normal; /* 斜体を解除してまっすぐに */
+            font-style: normal;
         }
 
         /* 全画面モード制御 */
@@ -243,7 +243,7 @@
             
             <!-- Play/Pause & Reset -->
             <div id="play-reset-buttons" class="flex items-center gap-6">
-                <button id="btn-toggle" onclick="toggleTimer()" class="group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-brand-500 hover:bg-brand-400 text-white ring-4 ring-transparent hover:ring-brand-200">
+                <button id="btn-toggle" onclick="toggleTimer()" class="group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-amber-400 hover:bg-amber-500 text-white ring-4 ring-transparent hover:ring-amber-200">
                     <div id="icon-play-wrapper" class="flex items-center justify-center">
                         <i data-lucide="play" class="w-12 h-12 ml-1 fill-current group-hover:scale-110 transition-transform"></i>
                     </div>
@@ -492,7 +492,6 @@
                     clearInterval(state.interval);
                     updatePlayButton();
                     playAlarmLoop(); 
-                    startFlashing();
                 } else {
                     state.timeLeft--;
                 }
@@ -503,7 +502,6 @@
         }
 
         let alarmLoopInterval;
-        let flashInterval;
 
         function playAlarmLoop() {
             if (!state.isSoundOn) return;
@@ -513,7 +511,8 @@
             
             let count = 0;
             alarmLoopInterval = setInterval(() => {
-                if (!state.isAlarmRinging || count >= 10) { 
+                // 5秒程度で止める
+                if (!state.isAlarmRinging || count >= 4) { 
                     stopAlarmIfRinging();
                     return;
                 }
@@ -526,36 +525,11 @@
             if (state.isAlarmRinging) {
                 state.isAlarmRinging = false;
                 clearInterval(alarmLoopInterval);
-                stopFlashing();
+                
+                // アラーム停止処理
+                els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
+                updateDisplay();
             }
-        }
-
-        function startFlashing() {
-            if (flashInterval) clearInterval(flashInterval);
-            
-            flashInterval = setInterval(() => {
-                if (!state.isAlarmRinging) {
-                    stopFlashing();
-                    return;
-                }
-                if (els.body.classList.contains('bg-red-500')) {
-                    els.body.classList.remove('bg-red-500');
-                    if (state.theme === 'dark') {
-                         els.body.classList.add('bg-slate-950');
-                    } else {
-                         els.body.classList.add('bg-white');
-                    }
-                } else {
-                    els.body.classList.remove('bg-slate-950', 'bg-white');
-                    els.body.classList.add('bg-red-500');
-                }
-            }, 250);
-        }
-
-        function stopFlashing() {
-            clearInterval(flashInterval);
-            els.body.classList.remove('bg-red-500');
-            applyThemeStyle();
         }
 
         function resetTimer() {
@@ -656,10 +630,11 @@
                 
                 // DSEGフォント (Clock Mode Only) - まっすぐなスタイル
                 els.timeDisplay.className = `relative z-10 font-dseg leading-none select-none transition-colors duration-200 cursor-default flex items-baseline justify-center ${textColorClass}`;
-                els.timeDisplay.style.fontSize = "clamp(8rem, 30vw, 35rem)"; // 更に大きく
+                // サイズ調整: 10%縮小
+                els.timeDisplay.style.fontSize = "clamp(5rem, 22vw, 20rem)";
 
                 els.timeDisplay.innerHTML = `
-                    <div class="flex items-baseline gap-4 sm:gap-8">
+                    <div class="flex items-baseline gap-1 sm:gap-2 px-4">
                         <span>${hStr}:${mStr}</span>
                         <span class="text-[0.4em] opacity-80">${sStr}</span>
                     </div>
@@ -697,7 +672,8 @@
             els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
             els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
             
-            if (state.mode === 'timer' && state.timeLeft <= 0) {
+            // 文字だけ赤点滅
+            if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800');
                  
