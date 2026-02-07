@@ -262,7 +262,7 @@
             
             <!-- Play/Pause & Reset -->
             <div id="play-reset-buttons" class="flex items-center gap-6">
-                <button id="btn-toggle" onclick="toggleTimer()" class="group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-brand-500 hover:bg-brand-400 text-white ring-4 ring-transparent hover:ring-amber-200">
+                <button id="btn-toggle" onclick="toggleTimer()" class="group relative p-6 rounded-full soft-shadow transform active:scale-95 transition-all duration-200 flex items-center justify-center bg-amber-400 hover:bg-amber-500 text-white ring-4 ring-transparent hover:ring-amber-200">
                     <div id="icon-play-wrapper" class="flex items-center justify-center">
                         <i data-lucide="play" class="w-12 h-12 ml-1 fill-current group-hover:scale-110 transition-transform"></i>
                     </div>
@@ -334,7 +334,8 @@
             isActive: false,
             interval: null,
             currentColor: colors[0],
-            isAlarmRinging: false
+            isAlarmRinging: false,
+            selectedBgm: "" // BGM state
         };
 
         let els = {}; 
@@ -364,7 +365,7 @@
                 iconTheme: document.getElementById('icon-theme'),
                 iconVisual: document.getElementById('icon-visual'),
                 soundSelect: document.getElementById('sound-select'),
-                bgmSelect: document.getElementById('bgm-select'), // BGM Select
+                bgmSelect: document.getElementById('bgm-select'), 
                 quickBtns: document.querySelectorAll('.quick-btn'),
                 presetBtns: document.querySelectorAll('.preset-btn'),
                 colorMenu: document.getElementById('color-menu')
@@ -379,19 +380,10 @@
                 state.soundType = e.target.value;
             });
             
-            // BGM Listener
-            const bgmPlayer = document.getElementById('bgm-player');
+            // BGM Listener (Updated logic)
             els.bgmSelect.addEventListener('change', (e) => {
-                const file = e.target.value;
-                if (file) {
-                    bgmPlayer.src = file;
-                    // Note: Browsers may block play() if not triggered by user action directly.
-                    // Since this is in a 'change' event which comes from user interaction, it should work.
-                    bgmPlayer.play().catch(e => console.log('Playback prevented: ', e));
-                } else {
-                    bgmPlayer.pause();
-                    bgmPlayer.src = "";
-                }
+                state.selectedBgm = e.target.value;
+                updateBgm();
             });
 
             document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -439,6 +431,42 @@
             const appleIcon = document.getElementById('apple-icon');
             if(favicon) favicon.href = dataUrl;
             if(appleIcon) appleIcon.href = dataUrl;
+        }
+
+        // --- BGM Logic ---
+        function updateBgm() {
+            const player = document.getElementById('bgm-player');
+            
+            if (!state.selectedBgm) {
+                player.pause();
+                return;
+            }
+
+            // Update source if changed
+            // getAttribute to compare raw string from value
+            if (player.getAttribute('src') !== state.selectedBgm) {
+                player.src = state.selectedBgm;
+            }
+
+            let shouldPlay = false;
+
+            if (state.mode === 'clock') {
+                // Clock: Play immediately if selected
+                shouldPlay = true;
+            } else {
+                // Timer/Stopwatch: Play only if active (running) AND not alarming
+                if (state.isActive && !state.isAlarmRinging) {
+                    shouldPlay = true;
+                }
+            }
+
+            if (shouldPlay) {
+                if (player.paused) {
+                    player.play().catch(e => console.log('Playback prevented (user interaction needed):', e));
+                }
+            } else {
+                player.pause();
+            }
         }
 
         function renderColorMenu() {
@@ -525,6 +553,7 @@
             initAudio();
             state.isActive = !state.isActive;
             updatePlayButton();
+            updateBgm(); // Check BGM
             
             if (state.isActive) {
                 state.interval = setInterval(tick, 1000);
@@ -540,6 +569,7 @@
                     state.isActive = false;
                     clearInterval(state.interval);
                     updatePlayButton();
+                    updateBgm(); // Stop BGM
                     playAlarmLoop(); 
                 } else {
                     state.timeLeft--;
@@ -560,6 +590,7 @@
             
             let count = 0;
             alarmLoopInterval = setInterval(() => {
+                // 5秒程度で止める
                 if (!state.isAlarmRinging || count >= 4) { 
                     stopAlarmIfRinging();
                     return;
@@ -575,6 +606,7 @@
                 clearInterval(alarmLoopInterval);
                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                 updateDisplay();
+                updateBgm(); // Re-check if BGM should resume (unlikely for timer, but good practice)
             }
         }
 
@@ -583,6 +615,7 @@
             clearInterval(state.interval);
             stopAlarmIfRinging();
             updatePlayButton();
+            updateBgm(); // Stop BGM
             
             if (state.mode === 'timer') {
                 state.timeLeft = state.initialTime;
@@ -610,6 +643,7 @@
             state.timeLeft = seconds;
             state.initialTime = Math.max(1, seconds);
             updatePlayButton();
+            updateBgm(); // Stop BGM
             updateDisplay();
         }
 
@@ -644,6 +678,7 @@
             }
 
             renderColorMenu();
+            updateBgm(); // Check BGM for new mode
             updateDisplay();
         }
 
@@ -675,7 +710,10 @@
                 els.barProgress.style.opacity = '0';
                 els.visualRing.style.opacity = '0';
                 
+                // DSEGフォント (Clock Mode Only) - まっすぐなスタイル
+                // クロックモードではブランドカラーを使用 (白を選んでいれば白になる)
                 els.timeDisplay.className = `relative z-10 font-dseg leading-none select-none transition-colors duration-200 cursor-default flex items-baseline justify-center text-brand-500`;
+                // サイズ調整: 10%縮小
                 els.timeDisplay.style.fontSize = "clamp(5rem, 22vw, 20rem)";
 
                 els.timeDisplay.innerHTML = `
@@ -687,6 +725,7 @@
                 return;
             } 
             
+            // Timer/Stopwatch Mode (Outfit font)
             els.barProgress.style.opacity = '1';
             els.visualRing.style.opacity = state.visualType === 'ring' ? '1' : '0';
             
@@ -716,6 +755,7 @@
             els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
             els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
             
+            // 文字だけ赤点滅
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
