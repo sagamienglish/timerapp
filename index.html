@@ -323,7 +323,7 @@
             { hex: '#DDAED3', rgb: '221 174 211' }   // Lavender
         ];
 
-        const state = {
+        let state = {
             theme: 'light',
             visualType: 'bar',
             mode: 'timer', 
@@ -342,6 +342,9 @@
         let els = {}; 
 
         window.onload = () => {
+            // Load Settings First
+            loadSettings();
+
             els = {
                 body: document.getElementById('app-body'),
                 modeContainer: document.getElementById('mode-container'),
@@ -368,8 +371,13 @@
                 quickBtns: document.querySelectorAll('.quick-btn'),
                 presetBtns: document.querySelectorAll('.preset-btn'),
                 colorMenu: document.getElementById('color-menu'),
-                bgmPlayer: document.getElementById('bgm-player')
+                bgmPlayer: document.getElementById('bgm-player'),
+                alarmPlayer: document.getElementById('alarm-player')
             };
+
+            // Apply loaded settings to UI
+            els.soundSelect.value = state.soundType;
+            els.bgmSelect.value = state.selectedBgm;
 
             generateAppIcons(); 
             renderColorMenu();
@@ -378,10 +386,17 @@
             // Event Listeners
             els.soundSelect.addEventListener('change', (e) => {
                 state.soundType = e.target.value;
+                saveSettings();
+                // Preload
+                if(state.soundType && state.soundType !== 'Beep' && state.soundType !== '') {
+                    els.alarmPlayer.src = state.soundType;
+                    els.alarmPlayer.load();
+                }
             });
             
             els.bgmSelect.addEventListener('change', (e) => {
                 state.selectedBgm = e.target.value;
+                saveSettings();
                 updateBgm();
             });
 
@@ -393,8 +408,48 @@
             }, 1000);
 
             applyThemeStyle();
-            setMode('timer'); 
+            setMode(state.mode); // Restore mode
+            updateDisplay(); // Ensure initial display corresponds to saved time
         };
+
+        // --- LocalStorage ---
+        function saveSettings() {
+            // Only save persistent settings, not running state like isActive
+            const settings = {
+                theme: state.theme,
+                visualType: state.visualType,
+                mode: state.mode === 'clock' ? 'clock' : 'timer', // Restore to timer if stopwatch
+                soundType: state.soundType,
+                selectedBgm: state.selectedBgm,
+                currentColor: state.currentColor,
+                lastTimeLeft: state.timeLeft,
+                lastInitialTime: state.initialTime
+            };
+            localStorage.setItem('classroomTimerSettings', JSON.stringify(settings));
+        }
+
+        function loadSettings() {
+            const saved = localStorage.getItem('classroomTimerSettings');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    // Merge with defaults
+                    state.theme = parsed.theme || state.theme;
+                    state.visualType = parsed.visualType || state.visualType;
+                    state.mode = parsed.mode || 'timer';
+                    state.soundType = parsed.soundType || state.soundType;
+                    state.selectedBgm = parsed.selectedBgm || state.selectedBgm;
+                    state.currentColor = parsed.currentColor || state.currentColor;
+                    // Restore time if valid
+                    if (parsed.lastTimeLeft) state.timeLeft = parsed.lastTimeLeft;
+                    if (parsed.lastInitialTime) state.initialTime = parsed.lastInitialTime;
+                } catch(e) {
+                    console.log('Settings load failed');
+                }
+            }
+            // Ensure CSS variable is set
+             document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
+        }
 
         function generateAppIcons() {
             const canvas = document.createElement('canvas');
@@ -426,7 +481,6 @@
         }
 
         // --- Unlock Audio for iOS ---
-        // Helper to silent play specific element
         function silentPlay(id) {
             const el = document.getElementById(id);
             if(el) {
@@ -439,25 +493,20 @@
             }
         }
 
-        // Unlock all audio elements
         function unlockAllAudio() {
-            // Unlock file-based alarms
             silentPlay('sound-Alarm.mp3');
             silentPlay('sound-High.mp3');
             silentPlay('sound-Up.mp3');
             
-            // Unlock BGM
-            if (els.bgmPlayer) {
-                // If BGM is selected, play it properly. If not, just unlock.
-                if (!state.selectedBgm) {
-                    // Temporarily set a source just to unlock logic if needed, but usually empty src won't work.
-                    // If no BGM selected, we don't strictly need to unlock it yet.
-                    // But if user selects BGM mid-timer, it might need unlock.
-                    // Best effort:
-                }
+            // Unlock BGM if selected
+            if (state.selectedBgm && els.bgmPlayer) {
+                 // Play for a moment then pause to authorize
+                 els.bgmPlayer.volume = 0;
+                 els.bgmPlayer.play().then(() => {
+                     els.bgmPlayer.pause();
+                     els.bgmPlayer.volume = 0.8; // Set default BGM volume
+                 }).catch(e=>{});
             }
-
-            // Unlock Beep
             initAudio();
         }
 
@@ -472,18 +521,19 @@
 
             if (player.getAttribute('src') !== state.selectedBgm) {
                 player.src = state.selectedBgm;
-                player.volume = 1.0; 
+                player.volume = 0.8; // Lower volume by default
             }
 
             let shouldPlay = false;
 
             if (state.mode === 'clock') {
                 shouldPlay = true;
-                player.volume = 1.0; 
+                player.volume = 0.8; 
             } else {
                 if (state.isActive && !state.isAlarmRinging) {
                     shouldPlay = true;
-                    if (state.timeLeft > 4) player.volume = 1.0; 
+                    // Reset volume if not fading out
+                    if (state.timeLeft > 4) player.volume = 0.8; 
                 }
             }
 
@@ -537,6 +587,7 @@
         function setColor(colorObj) {
             state.currentColor = colorObj;
             document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
+            saveSettings();
             
             renderColorMenu();
             els.colorMenu.classList.add('hidden');
@@ -555,7 +606,6 @@
         }
 
         function initAudio() {
-            // Only needed for Beep sound fallback
             if (!audioCtx) {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioCtx = new AudioContext();
@@ -578,7 +628,7 @@
         function toggleTimer() {
             if (state.mode === 'clock') return;
             
-            // iOS Hack for Audio: Unlock everything on start
+            // iOS Hack for Audio
             if (!state.isActive) {
                unlockAllAudio();
             }
@@ -614,10 +664,11 @@
                     
                     // Fade Out BGM
                     if (state.selectedBgm && els.bgmPlayer) {
+                         // Default volume is 0.8
                          if (state.timeLeft <= 4 && state.timeLeft > 0) {
-                             els.bgmPlayer.volume = state.timeLeft / 5;
+                             els.bgmPlayer.volume = (state.timeLeft / 5) * 0.8;
                          } else if (state.timeLeft > 4) {
-                             els.bgmPlayer.volume = 1.0;
+                             els.bgmPlayer.volume = 0.8;
                          }
                     }
                 }
@@ -625,6 +676,7 @@
                 state.countUpTime++;
             }
             updateDisplay();
+            // Save time occasionally (e.g. paused) but maybe not every tick to avoid IO spam
         }
 
         function tickStopwatch() {
@@ -639,7 +691,6 @@
         function playAlarmLoop() {
             const type = state.soundType;
             if (!type || type === '') {
-                // OFF: only flash
                 state.isAlarmRinging = true;
                 startFlashing();
                 alarmStopTimeout = setTimeout(() => { stopAlarmIfRinging(); }, 5000);
@@ -649,7 +700,6 @@
             state.isAlarmRinging = true;
             startFlashing();
             
-            // Initial Play
             playAlarmSound(); 
             
             let count = 0;
@@ -664,9 +714,7 @@
                     count++;
                 }, 1000);
             } else {
-                // Audio File Logic: It is set to loop in HTML, so we just let it play for 5s then stop/pause
-                // playAlarmSound handles the play() call
-                // Just set timeout to stop
+                // Audio file loop
                 alarmStopTimeout = setTimeout(() => {
                     stopAlarmIfRinging();
                 }, 5000);
@@ -680,7 +728,6 @@
                 if (state.soundType === 'Beep') {
                     clearInterval(alarmLoopInterval);
                 } else {
-                    // For file based
                     clearTimeout(alarmStopTimeout);
                     const elId = `sound-${state.soundType}`;
                     const el = document.getElementById(elId);
@@ -693,7 +740,7 @@
                 stopFlashing();
                 els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                 
-                if (els.bgmPlayer) els.bgmPlayer.volume = 1.0;
+                if (els.bgmPlayer) els.bgmPlayer.volume = 0.8;
                 updateBgm(); 
                 updateDisplay();
             }
@@ -727,6 +774,7 @@
             
             if (state.mode === 'timer') {
                 state.timeLeft = state.initialTime;
+                saveSettings(); // Save reset state
             } else {
                 state.countUpTime = 0;
             }
@@ -741,6 +789,7 @@
             if (state.timeLeft > state.initialTime) {
                 state.initialTime = state.timeLeft;
             }
+            saveSettings(); // Save time change
             updateDisplay();
         }
 
@@ -752,6 +801,7 @@
             state.initialTime = Math.max(1, seconds);
             updatePlayButton();
             updateBgm(); 
+            saveSettings();
             updateDisplay();
         }
 
@@ -776,16 +826,20 @@
                 els.timerControls.classList.remove('hidden');
                 els.playResetButtons.classList.remove('hidden');
                 els.visualRing.style.opacity = '1';
+                els.visualBar.classList.remove('hidden'); // Show Bar
             } else if (mode === 'stopwatch') {
                 els.timerControls.classList.add('hidden');
                 els.playResetButtons.classList.remove('hidden');
                 els.visualRing.style.opacity = '1';
+                els.visualBar.classList.remove('hidden');
             } else if (mode === 'clock') {
                 els.timerControls.classList.add('hidden');
                 els.playResetButtons.classList.add('hidden');
+                els.visualBar.classList.add('hidden'); // Hide Bar in Clock
             }
 
             renderColorMenu();
+            saveSettings();
             updateBgm(); 
             updateDisplay();
         }
@@ -888,44 +942,23 @@
             } else {
                  els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                  els.barProgress.classList.remove('bg-red-500');
-                 els.barProgress.classList.add('bg-brand-500');
+                 
+                 // Apply theme based color
+                 if(state.theme === 'dark') {
+                     // In dark mode, visual-bar track is dark, but progress is brand
+                     els.barProgress.classList.add('bg-brand-500');
+                 } else {
+                     els.barProgress.classList.add('bg-brand-500');
+                 }
+                 
                  els.ringProgress.setAttribute('stroke', 'rgb(var(--brand-rgb))');
             }
         }
 
-        function toggleFullscreen() {
-            if (document.body.classList.contains('fake-fullscreen')) {
-                document.body.classList.remove('fake-fullscreen');
-                return;
-            }
-            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-                const requestFs = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
-                if (requestFs) {
-                    requestFs.call(document.documentElement).catch(e => {
-                        document.body.classList.add('fake-fullscreen');
-                    });
-                } else {
-                    document.body.classList.add('fake-fullscreen');
-                }
-            } else {
-                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
-                if (exitFs) exitFs.call(document);
-            }
-        }
-        
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                if (document.body.classList.contains('fake-fullscreen')) {
-                    document.body.classList.remove('fake-fullscreen');
-                } else if (document.fullscreenElement || document.webkitFullscreenElement) {
-                    const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
-                    if (exitFs) exitFs.call(document);
-                }
-            }
-        });
-
         function toggleVisual() {
             state.visualType = state.visualType === 'bar' ? 'ring' : 'bar';
+            saveSettings();
+            
             if (state.mode !== 'clock') {
                 if (state.visualType === 'bar') {
                     els.visualBar.style.opacity = '1';
@@ -942,6 +975,7 @@
 
         function toggleTheme() {
             state.theme = state.theme === 'light' ? 'dark' : 'light';
+            saveSettings();
             applyThemeStyle();
             renderColorMenu();
             updateDisplay();
@@ -953,6 +987,9 @@
             if (state.theme === 'dark') {
                 els.body.classList.replace('bg-white', 'bg-slate-950');
                 els.body.classList.replace('text-slate-800', 'text-white');
+                
+                // Visual Bar Track Color - set to match background or darker to be invisible
+                els.visualBar.classList.replace('bg-slate-100', 'bg-slate-900'); 
                 
                 els.modeContainer.classList.replace('bg-slate-100', 'bg-slate-900');
                 els.modeContainer.classList.replace('border-slate-200', 'border-slate-800');
@@ -985,6 +1022,9 @@
                 els.body.classList.replace('bg-slate-950', 'bg-white');
                 els.body.classList.replace('text-white', 'text-slate-800');
 
+                // Visual Bar Track Color - default light grey
+                els.visualBar.classList.replace('bg-slate-900', 'bg-slate-100');
+
                 els.modeContainer.classList.replace('bg-slate-900', 'bg-slate-100');
                 els.modeContainer.classList.replace('border-slate-800', 'border-slate-200');
 
@@ -1016,21 +1056,17 @@
             setMode(state.mode); 
         }
 
-        // --- Sound Generator (for Beep) ---
+        // Sound Generator (for Beep)
         function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
             if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            
             osc.type = type;
             osc.frequency.value = freq;
-            
             gain.gain.setValueAtTime(vol, audioCtx.currentTime + startTime);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + startTime + duration);
-            
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            
             osc.start(audioCtx.currentTime + startTime);
             osc.stop(audioCtx.currentTime + startTime + duration);
         }
@@ -1044,7 +1080,6 @@
                 playTone(880, 'square', 0.1, 0.15);
                 playTone(880, 'square', 0.4, 0.3);
             } else {
-                // Play from individual pre-loaded element
                 const elId = `sound-${type}`;
                 const el = document.getElementById(elId);
                 if(el) {
