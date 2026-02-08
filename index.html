@@ -309,7 +309,7 @@
 
     <!-- App Logic -->
     <script>
-        // Global variables
+        // Global variables declaration
         var audioCtx = null;
         var alarmLoopInterval = null;
         var alarmStopTimeout = null;
@@ -323,7 +323,6 @@
             { hex: '#DDAED3', rgb: '221 174 211' }   // Lavender
         ];
 
-        // Default state
         let state = {
             theme: 'light',
             visualType: 'bar',
@@ -340,7 +339,6 @@
             selectedBgm: "" 
         };
 
-        // UI Elements Cache
         let els = {}; 
 
         window.onload = () => {
@@ -374,28 +372,32 @@
                 presetBtns: document.querySelectorAll('.preset-btn'),
                 colorMenu: document.getElementById('color-menu'),
                 bgmPlayer: document.getElementById('bgm-player'),
-                alarmPlayer: document.getElementById('sound-Alarm.mp3') // Default
+                alarmPlayer: document.getElementById('sound-Alarm.mp3') // Default Ref
             };
 
             // Apply loaded settings to UI controls
-            els.soundSelect.value = state.soundType;
-            els.bgmSelect.value = state.selectedBgm;
+            if(els.soundSelect) els.soundSelect.value = state.soundType;
+            if(els.bgmSelect) els.bgmSelect.value = state.selectedBgm;
 
             generateAppIcons(); 
             renderColorMenu();
             lucide.createIcons();
             
             // Event Listeners
-            els.soundSelect.addEventListener('change', (e) => {
-                state.soundType = e.target.value;
-                saveSettings();
-            });
+            if(els.soundSelect) {
+                els.soundSelect.addEventListener('change', (e) => {
+                    state.soundType = e.target.value;
+                    saveSettings();
+                });
+            }
             
-            els.bgmSelect.addEventListener('change', (e) => {
-                state.selectedBgm = e.target.value;
-                saveSettings();
-                updateBgm();
-            });
+            if(els.bgmSelect) {
+                els.bgmSelect.addEventListener('change', (e) => {
+                    state.selectedBgm = e.target.value;
+                    saveSettings();
+                    updateBgm();
+                });
+            }
 
             document.addEventListener('fullscreenchange', handleFullscreenChange);
             document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -423,7 +425,9 @@
                 lastTimeLeft: state.timeLeft,
                 lastInitialTime: state.initialTime
             };
-            localStorage.setItem('classroomTimerSettings', JSON.stringify(settings));
+            try {
+                localStorage.setItem('classroomTimerSettings', JSON.stringify(settings));
+            } catch(e) {}
         }
 
         function loadSettings() {
@@ -474,53 +478,41 @@
             if(appleIcon) appleIcon.href = dataUrl;
         }
 
-        // --- Audio Functions ---
-        function initAudio() {
-            if (!audioCtx) {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
+        // --- Unlock Audio for iOS ---
+        function silentPlay(id) {
+            const el = document.getElementById(id);
+            if(el) {
+                el.volume = 0;
+                el.play().then(() => {
+                    el.pause();
+                    el.currentTime = 0;
+                    el.volume = 1.0;
+                }).catch(e => {});
             }
         }
 
-        // iOS Unlock: Play all potential audio elements silently
         function unlockAllAudio() {
-            ['sound-Alarm.mp3', 'sound-High.mp3', 'sound-Up.mp3'].forEach(id => {
-                const el = document.getElementById(id);
-                if(el) {
-                    el.volume = 0;
-                    el.play().then(() => {
-                        el.pause();
-                        el.currentTime = 0;
-                        el.volume = 1.0;
-                    }).catch(e => {});
-                }
-            });
-            
-            if (state.selectedBgm && els.bgmPlayer) {
-                 els.bgmPlayer.volume = 0;
-                 els.bgmPlayer.play().then(() => {
-                     els.bgmPlayer.pause();
-                     els.bgmPlayer.volume = 0.8; 
-                 }).catch(e=>{});
-            }
+            silentPlay('sound-Alarm.mp3');
+            silentPlay('sound-High.mp3');
+            silentPlay('sound-Up.mp3');
             initAudio(); // Unlock beep context
         }
 
+        // --- BGM Logic ---
         function updateBgm() {
             const player = els.bgmPlayer;
             if (!state.selectedBgm) {
                 player.pause();
                 return;
             }
+
             if (player.getAttribute('src') !== state.selectedBgm) {
                 player.src = state.selectedBgm;
                 player.volume = 0.8; 
             }
 
             let shouldPlay = false;
+
             if (state.mode === 'clock') {
                 shouldPlay = true;
                 player.volume = 0.8; 
@@ -540,7 +532,75 @@
             }
         }
 
-        // --- Timer Control Functions ---
+        function renderColorMenu() {
+            if (!els.colorMenu) return;
+            els.colorMenu.innerHTML = '';
+            
+            let currentPalette = [...colors];
+            
+            if (state.mode === 'clock' && state.theme === 'dark') {
+                currentPalette.push({ hex: '#ffffff', rgb: '255 255 255' });
+            }
+
+            currentPalette.forEach((c) => {
+                const dot = document.createElement('div');
+                dot.className = `color-dot ${c.hex === state.currentColor.hex ? 'active' : ''}`;
+                dot.style.backgroundColor = c.hex;
+                
+                if (c.hex === '#ffffff') {
+                    dot.style.border = '2px solid #555';
+                }
+
+                dot.onclick = (e) => {
+                    e.stopPropagation();
+                    setColor(c);
+                };
+                els.colorMenu.appendChild(dot);
+            });
+        }
+
+        function toggleColorMenu(e) {
+            if(e) e.stopPropagation();
+            els.colorMenu.classList.toggle('hidden');
+        }
+        
+        document.addEventListener('click', (e) => {
+            if (els.colorMenu && !els.colorMenu.classList.contains('hidden') && !e.target.closest('#settings-container')) {
+                els.colorMenu.classList.add('hidden');
+            }
+        });
+
+        function setColor(colorObj) {
+            state.currentColor = colorObj;
+            document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
+            saveSettings();
+            
+            renderColorMenu();
+            els.colorMenu.classList.add('hidden');
+            
+            generateAppIcons();
+            applyThemeStyle();
+            updateDisplay();
+        }
+
+        function handleFullscreenChange() {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                document.body.classList.add('is-fullscreen');
+            } else {
+                document.body.classList.remove('is-fullscreen');
+            }
+        }
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
         function handleTimeClick() {
             const isFullscreen = document.fullscreenElement || 
                                document.webkitFullscreenElement || 
@@ -564,7 +624,7 @@
                 updateDisplay();
             }
 
-            // Unlock Audio on Start
+            // Unlock Alarms on Start
             if (!state.isActive) {
                unlockAllAudio();
             }
@@ -593,10 +653,11 @@
                     state.isActive = false;
                     clearInterval(state.interval);
                     updatePlayButton();
-                    updateBgm(); 
+                    updateBgm(); // Stop BGM
                     playAlarmLoop(); 
                 } else {
                     state.timeLeft--;
+                    
                     // Fade Out BGM
                     if (state.selectedBgm && els.bgmPlayer) {
                          if (state.timeLeft <= 4 && state.timeLeft > 0) {
@@ -621,6 +682,7 @@
         function playAlarmLoop() {
             const type = state.soundType;
             if (!type || type === '') {
+                // OFF: only flash
                 state.isAlarmRinging = true;
                 startFlashing();
                 alarmStopTimeout = setTimeout(() => { stopAlarmIfRinging(); }, 5000);
@@ -633,6 +695,7 @@
             playAlarmSound(); 
             
             let count = 0;
+            
             if (type === 'Beep') {
                  alarmLoopInterval = setInterval(() => {
                     if (!state.isAlarmRinging || count >= 4) { 
@@ -658,6 +721,7 @@
                 playTone(880, 'square', 0.1, 0.15);
                 playTone(880, 'square', 0.4, 0.3);
             } else {
+                // Pre-loaded audio elements
                 const elId = `sound-${type}`;
                 const el = document.getElementById(elId);
                 if(el) {
@@ -693,9 +757,9 @@
             }
         }
 
-        // --- Visual Effects ---
         function startFlashing() {
             if (flashInterval) clearInterval(flashInterval);
+            
             flashInterval = setInterval(() => {
                 if (!state.isAlarmRinging) {
                     stopFlashing();
@@ -839,17 +903,23 @@
                  const m = Math.floor(totalMs / 60000);
                  const s = Math.floor((totalMs % 60000) / 1000);
                  const ms = Math.floor((totalMs % 1000) / 10); 
+
                  const mStr = m.toString().padStart(2, '0');
                  const sStr = s.toString().padStart(2, '0');
                  const msStr = ms.toString().padStart(2, '0');
+
                  fontSizeClass = "clamp(4rem, 20vw, 18rem)";
+                 
                  els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span><span class="text-[0.5em] opacity-80 ml-1">.${msStr}</span>`;
+            
             } else {
                  const t = state.timeLeft;
                  const m = Math.floor(t / 60);
                  const s = t % 60;
+                 
                  const mStr = m.toString().padStart(2, '0');
                  const sStr = s.toString().padStart(2, '0');
+                 
                  els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span>`;
             }
 
@@ -873,6 +943,7 @@
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
+                 
                  els.barProgress.classList.remove('bg-brand-500');
                  els.barProgress.classList.add('bg-red-500');
                  els.ringProgress.setAttribute('stroke', '#ef4444');
@@ -888,53 +959,39 @@
             }
         }
 
-        // Color Menu Helper
-        function renderColorMenu() {
-            if (!els.colorMenu) return;
-            els.colorMenu.innerHTML = '';
-            let currentPalette = [...colors];
-            if (state.mode === 'clock' && state.theme === 'dark') {
-                currentPalette.push({ hex: '#ffffff', rgb: '255 255 255' });
+        function toggleFullscreen() {
+            if (document.body.classList.contains('fake-fullscreen')) {
+                document.body.classList.remove('fake-fullscreen');
+                return;
             }
-            currentPalette.forEach((c) => {
-                const dot = document.createElement('div');
-                dot.className = `color-dot ${c.hex === state.currentColor.hex ? 'active' : ''}`;
-                dot.style.backgroundColor = c.hex;
-                if (c.hex === '#ffffff') dot.style.border = '2px solid #555';
-                dot.onclick = (e) => {
-                    e.stopPropagation();
-                    setColor(c);
-                };
-                els.colorMenu.appendChild(dot);
-            });
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                const requestFs = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+                if (requestFs) {
+                    requestFs.call(document.documentElement).catch(e => {
+                        document.body.classList.add('fake-fullscreen');
+                    });
+                } else {
+                    document.body.classList.add('fake-fullscreen');
+                }
+            } else {
+                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFs) exitFs.call(document);
+            }
         }
-
-        function toggleColorMenu(e) {
-            if(e) e.stopPropagation();
-            els.colorMenu.classList.toggle('hidden');
-        }
-
-        function setColor(colorObj) {
-            state.currentColor = colorObj;
-            document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
-            saveSettings();
-            renderColorMenu();
-            els.colorMenu.classList.add('hidden');
-            generateAppIcons();
-            applyThemeStyle();
-            updateDisplay();
-        }
-
-        document.addEventListener('click', (e) => {
-            if (els.colorMenu && !els.colorMenu.classList.contains('hidden') && !e.target.closest('#settings-container')) {
-                els.colorMenu.classList.add('hidden');
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (document.body.classList.contains('fake-fullscreen')) {
+                    document.body.classList.remove('fake-fullscreen');
+                } else if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                    if (exitFs) exitFs.call(document);
+                }
             }
         });
 
-        // Theme and Visual Helpers
         function toggleVisual() {
             state.visualType = state.visualType === 'bar' ? 'ring' : 'bar';
-            saveSettings();
             if (state.mode !== 'clock') {
                 if (state.visualType === 'bar') {
                     els.visualBar.style.opacity = '1';
@@ -951,13 +1008,14 @@
 
         function toggleTheme() {
             state.theme = state.theme === 'light' ? 'dark' : 'light';
-            saveSettings();
             applyThemeStyle();
             renderColorMenu();
             updateDisplay();
         }
 
         function applyThemeStyle() {
+            renderColorMenu();
+
             if (state.theme === 'dark') {
                 els.body.classList.replace('bg-white', 'bg-slate-950');
                 els.body.classList.replace('text-slate-800', 'text-white');
@@ -1000,41 +1058,6 @@
                 els.colorMenu.className = "absolute top-full right-0 mt-2 p-3 bg-white rounded-xl shadow-xl border border-slate-100 flex gap-2 hidden z-50 min-w-[200px] flex-wrap justify-center";
             }
             lucide.createIcons();
-        }
-
-        // Toggle Sound function (Visual only, logic is in playTone/playAlarmSound)
-        function toggleSound() {
-            // This function is effectively replaced by the select dropdown
-        }
-        
-        function handleFullscreenChange() {
-             if (document.fullscreenElement || document.webkitFullscreenElement) {
-                document.body.classList.add('is-fullscreen');
-            } else {
-                document.body.classList.remove('is-fullscreen');
-            }
-        }
-        
-        function toggleFullscreen() {
-             if (document.body.classList.contains('fake-fullscreen')) {
-                document.body.classList.remove('fake-fullscreen');
-                return;
-            }
-            const docEl = document.documentElement;
-            const requestFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
-
-            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-                if (requestFs) {
-                    requestFs.call(docEl).catch(e => {
-                        document.body.classList.add('fake-fullscreen');
-                    });
-                } else {
-                    document.body.classList.add('fake-fullscreen');
-                }
-            } else {
-                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
-                if (exitFs) exitFs.call(document);
-            }
         }
 
         function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
