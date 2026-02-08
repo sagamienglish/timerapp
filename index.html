@@ -142,17 +142,14 @@
 </head>
 <body class="bg-white text-slate-800 transition-colors duration-300 min-h-screen flex flex-col overflow-hidden" id="app-body" onclick="stopAlarmIfRinging()">
 
-    <!-- Audio Players (Pre-defined for iOS stability) -->
+    <!-- Audio Players -->
     <audio id="bgm-player" loop preload="auto"></audio>
     
-    <!-- Individual Alarm Players -->
+    <!-- Individual Alarm Players for iOS Compatibility -->
     <audio id="sound-Alarm.mp3" src="Alarm.mp3" preload="auto" loop></audio>
     <audio id="sound-High.mp3" src="High.mp3" preload="auto" loop></audio>
     <audio id="sound-Up.mp3" src="Up.mp3" preload="auto" loop></audio>
     
-    <!-- Dummy for beep unlock -->
-    <div id="audio-unlock-trigger"></div>
-
     <!-- Header Controls -->
     <header class="p-4 flex flex-col sm:flex-row justify-between items-center gap-3 relative z-20 hide-in-fullscreen">
         <!-- Mode Tabs -->
@@ -312,8 +309,11 @@
 
     <!-- App Logic -->
     <script>
-        // Global
-        var audioCtx = null; 
+        // Global variables
+        var audioCtx = null;
+        var alarmLoopInterval = null;
+        var alarmStopTimeout = null;
+        var flashInterval = null;
         
         const colors = [
             { hex: '#5A9CB5', rgb: '90 156 181' },   // Blue
@@ -323,6 +323,7 @@
             { hex: '#DDAED3', rgb: '221 174 211' }   // Lavender
         ];
 
+        // Default state
         let state = {
             theme: 'light',
             visualType: 'bar',
@@ -339,10 +340,11 @@
             selectedBgm: "" 
         };
 
+        // UI Elements Cache
         let els = {}; 
 
         window.onload = () => {
-            // Load Settings First
+            // Load persistent settings
             loadSettings();
 
             els = {
@@ -372,10 +374,10 @@
                 presetBtns: document.querySelectorAll('.preset-btn'),
                 colorMenu: document.getElementById('color-menu'),
                 bgmPlayer: document.getElementById('bgm-player'),
-                alarmPlayer: document.getElementById('alarm-player')
+                alarmPlayer: document.getElementById('sound-Alarm.mp3') // Default
             };
 
-            // Apply loaded settings to UI
+            // Apply loaded settings to UI controls
             els.soundSelect.value = state.soundType;
             els.bgmSelect.value = state.selectedBgm;
 
@@ -387,11 +389,6 @@
             els.soundSelect.addEventListener('change', (e) => {
                 state.soundType = e.target.value;
                 saveSettings();
-                // Preload
-                if(state.soundType && state.soundType !== 'Beep' && state.soundType !== '') {
-                    els.alarmPlayer.src = state.soundType;
-                    els.alarmPlayer.load();
-                }
             });
             
             els.bgmSelect.addEventListener('change', (e) => {
@@ -403,22 +400,23 @@
             document.addEventListener('fullscreenchange', handleFullscreenChange);
             document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
             
+            // Clock Mode Loop
             setInterval(() => {
                 if (state.mode === 'clock') updateDisplay();
             }, 1000);
 
+            // Initial UI Setup
             applyThemeStyle();
-            setMode(state.mode); // Restore mode
-            updateDisplay(); // Ensure initial display corresponds to saved time
+            setMode(state.mode); 
+            updateDisplay();
         };
 
         // --- LocalStorage ---
         function saveSettings() {
-            // Only save persistent settings, not running state like isActive
             const settings = {
                 theme: state.theme,
                 visualType: state.visualType,
-                mode: state.mode === 'clock' ? 'clock' : 'timer', // Restore to timer if stopwatch
+                mode: state.mode === 'clock' ? 'clock' : 'timer', 
                 soundType: state.soundType,
                 selectedBgm: state.selectedBgm,
                 currentColor: state.currentColor,
@@ -433,24 +431,20 @@
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
-                    // Merge with defaults
                     state.theme = parsed.theme || state.theme;
                     state.visualType = parsed.visualType || state.visualType;
                     state.mode = parsed.mode || 'timer';
                     state.soundType = parsed.soundType || state.soundType;
                     state.selectedBgm = parsed.selectedBgm || state.selectedBgm;
                     state.currentColor = parsed.currentColor || state.currentColor;
-                    // Restore time if valid
                     if (parsed.lastTimeLeft) state.timeLeft = parsed.lastTimeLeft;
                     if (parsed.lastInitialTime) state.initialTime = parsed.lastInitialTime;
-                } catch(e) {
-                    console.log('Settings load failed');
-                }
+                } catch(e) {}
             }
-            // Ensure CSS variable is set
              document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
         }
 
+        // --- Icon Generator ---
         function generateAppIcons() {
             const canvas = document.createElement('canvas');
             canvas.width = 512;
@@ -480,59 +474,59 @@
             if(appleIcon) appleIcon.href = dataUrl;
         }
 
-        // --- Unlock Audio for iOS ---
-        function silentPlay(id) {
-            const el = document.getElementById(id);
-            if(el) {
-                el.volume = 0;
-                el.play().then(() => {
-                    el.pause();
-                    el.currentTime = 0;
-                    el.volume = 1.0;
-                }).catch(e => {});
+        // --- Audio Functions ---
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
             }
         }
 
+        // iOS Unlock: Play all potential audio elements silently
         function unlockAllAudio() {
-            silentPlay('sound-Alarm.mp3');
-            silentPlay('sound-High.mp3');
-            silentPlay('sound-Up.mp3');
+            ['sound-Alarm.mp3', 'sound-High.mp3', 'sound-Up.mp3'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) {
+                    el.volume = 0;
+                    el.play().then(() => {
+                        el.pause();
+                        el.currentTime = 0;
+                        el.volume = 1.0;
+                    }).catch(e => {});
+                }
+            });
             
-            // Unlock BGM if selected
             if (state.selectedBgm && els.bgmPlayer) {
-                 // Play for a moment then pause to authorize
                  els.bgmPlayer.volume = 0;
                  els.bgmPlayer.play().then(() => {
                      els.bgmPlayer.pause();
-                     els.bgmPlayer.volume = 0.8; // Set default BGM volume
+                     els.bgmPlayer.volume = 0.8; 
                  }).catch(e=>{});
             }
-            initAudio();
+            initAudio(); // Unlock beep context
         }
 
-        // --- BGM Logic ---
         function updateBgm() {
             const player = els.bgmPlayer;
-            
             if (!state.selectedBgm) {
                 player.pause();
                 return;
             }
-
             if (player.getAttribute('src') !== state.selectedBgm) {
                 player.src = state.selectedBgm;
-                player.volume = 0.8; // Lower volume by default
+                player.volume = 0.8; 
             }
 
             let shouldPlay = false;
-
             if (state.mode === 'clock') {
                 shouldPlay = true;
                 player.volume = 0.8; 
             } else {
                 if (state.isActive && !state.isAlarmRinging) {
                     shouldPlay = true;
-                    // Reset volume if not fading out
                     if (state.timeLeft > 4) player.volume = 0.8; 
                 }
             }
@@ -546,75 +540,7 @@
             }
         }
 
-        function renderColorMenu() {
-            if (!els.colorMenu) return;
-            els.colorMenu.innerHTML = '';
-            
-            let currentPalette = [...colors];
-            
-            if (state.mode === 'clock' && state.theme === 'dark') {
-                currentPalette.push({ hex: '#ffffff', rgb: '255 255 255' });
-            }
-
-            currentPalette.forEach((c) => {
-                const dot = document.createElement('div');
-                dot.className = `color-dot ${c.hex === state.currentColor.hex ? 'active' : ''}`;
-                dot.style.backgroundColor = c.hex;
-                
-                if (c.hex === '#ffffff') {
-                    dot.style.border = '2px solid #555';
-                }
-
-                dot.onclick = (e) => {
-                    e.stopPropagation();
-                    setColor(c);
-                };
-                els.colorMenu.appendChild(dot);
-            });
-        }
-
-        function toggleColorMenu(e) {
-            if(e) e.stopPropagation();
-            els.colorMenu.classList.toggle('hidden');
-        }
-        
-        document.addEventListener('click', (e) => {
-            if (els.colorMenu && !els.colorMenu.classList.contains('hidden') && !e.target.closest('#settings-container')) {
-                els.colorMenu.classList.add('hidden');
-            }
-        });
-
-        function setColor(colorObj) {
-            state.currentColor = colorObj;
-            document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
-            saveSettings();
-            
-            renderColorMenu();
-            els.colorMenu.classList.add('hidden');
-            
-            generateAppIcons();
-            applyThemeStyle();
-            updateDisplay();
-        }
-
-        function handleFullscreenChange() {
-            if (document.fullscreenElement || document.webkitFullscreenElement) {
-                document.body.classList.add('is-fullscreen');
-            } else {
-                document.body.classList.remove('is-fullscreen');
-            }
-        }
-
-        function initAudio() {
-            if (!audioCtx) {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        }
-
+        // --- Timer Control Functions ---
         function handleTimeClick() {
             const isFullscreen = document.fullscreenElement || 
                                document.webkitFullscreenElement || 
@@ -628,7 +554,17 @@
         function toggleTimer() {
             if (state.mode === 'clock') return;
             
-            // iOS Hack for Audio
+            // Auto Reset if finished
+            if (state.mode === 'timer' && state.timeLeft <= 0) {
+                if (state.isAlarmRinging) {
+                    stopAlarmIfRinging();
+                    return;
+                }
+                state.timeLeft = state.initialTime;
+                updateDisplay();
+            }
+
+            // Unlock Audio on Start
             if (!state.isActive) {
                unlockAllAudio();
             }
@@ -657,14 +593,12 @@
                     state.isActive = false;
                     clearInterval(state.interval);
                     updatePlayButton();
-                    updateBgm(); // Stop BGM
+                    updateBgm(); 
                     playAlarmLoop(); 
                 } else {
                     state.timeLeft--;
-                    
                     // Fade Out BGM
                     if (state.selectedBgm && els.bgmPlayer) {
-                         // Default volume is 0.8
                          if (state.timeLeft <= 4 && state.timeLeft > 0) {
                              els.bgmPlayer.volume = (state.timeLeft / 5) * 0.8;
                          } else if (state.timeLeft > 4) {
@@ -676,7 +610,6 @@
                 state.countUpTime++;
             }
             updateDisplay();
-            // Save time occasionally (e.g. paused) but maybe not every tick to avoid IO spam
         }
 
         function tickStopwatch() {
@@ -684,9 +617,6 @@
             state.countUpTime = now - state.stopwatchStartTime;
             updateDisplay();
         }
-
-        let alarmLoopInterval;
-        let alarmStopTimeout;
 
         function playAlarmLoop() {
             const type = state.soundType;
@@ -703,7 +633,6 @@
             playAlarmSound(); 
             
             let count = 0;
-            
             if (type === 'Beep') {
                  alarmLoopInterval = setInterval(() => {
                     if (!state.isAlarmRinging || count >= 4) { 
@@ -714,10 +643,28 @@
                     count++;
                 }, 1000);
             } else {
-                // Audio file loop
+                // File based loop stop
                 alarmStopTimeout = setTimeout(() => {
                     stopAlarmIfRinging();
                 }, 5000);
+            }
+        }
+
+        function playAlarmSound() {
+            initAudio();
+            const type = state.soundType;
+            if (type === 'Beep') {
+                playTone(880, 'square', 0.1, 0);
+                playTone(880, 'square', 0.1, 0.15);
+                playTone(880, 'square', 0.4, 0.3);
+            } else {
+                const elId = `sound-${type}`;
+                const el = document.getElementById(elId);
+                if(el) {
+                    el.currentTime = 0;
+                    el.volume = 1.0;
+                    el.play().catch(e => console.log(e));
+                }
             }
         }
 
@@ -746,10 +693,9 @@
             }
         }
 
-        let flashInterval;
+        // --- Visual Effects ---
         function startFlashing() {
             if (flashInterval) clearInterval(flashInterval);
-            
             flashInterval = setInterval(() => {
                 if (!state.isAlarmRinging) {
                     stopFlashing();
@@ -774,7 +720,7 @@
             
             if (state.mode === 'timer') {
                 state.timeLeft = state.initialTime;
-                saveSettings(); // Save reset state
+                saveSettings(); 
             } else {
                 state.countUpTime = 0;
             }
@@ -789,7 +735,7 @@
             if (state.timeLeft > state.initialTime) {
                 state.initialTime = state.timeLeft;
             }
-            saveSettings(); // Save time change
+            saveSettings(); 
             updateDisplay();
         }
 
@@ -826,7 +772,7 @@
                 els.timerControls.classList.remove('hidden');
                 els.playResetButtons.classList.remove('hidden');
                 els.visualRing.style.opacity = '1';
-                els.visualBar.classList.remove('hidden'); // Show Bar
+                els.visualBar.classList.remove('hidden'); 
             } else if (mode === 'stopwatch') {
                 els.timerControls.classList.add('hidden');
                 els.playResetButtons.classList.remove('hidden');
@@ -835,11 +781,10 @@
             } else if (mode === 'clock') {
                 els.timerControls.classList.add('hidden');
                 els.playResetButtons.classList.add('hidden');
-                els.visualBar.classList.add('hidden'); // Hide Bar in Clock
+                els.visualBar.classList.add('hidden'); 
             }
 
             renderColorMenu();
-            saveSettings();
             updateBgm(); 
             updateDisplay();
         }
@@ -884,7 +829,6 @@
                 return;
             } 
             
-            // Timer/Stopwatch Mode
             els.barProgress.style.opacity = '1';
             els.visualRing.style.opacity = state.visualType === 'ring' ? '1' : '0';
             
@@ -895,23 +839,17 @@
                  const m = Math.floor(totalMs / 60000);
                  const s = Math.floor((totalMs % 60000) / 1000);
                  const ms = Math.floor((totalMs % 1000) / 10); 
-
                  const mStr = m.toString().padStart(2, '0');
                  const sStr = s.toString().padStart(2, '0');
                  const msStr = ms.toString().padStart(2, '0');
-
                  fontSizeClass = "clamp(4rem, 20vw, 18rem)";
-                 
                  els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span><span class="text-[0.5em] opacity-80 ml-1">.${msStr}</span>`;
-            
             } else {
                  const t = state.timeLeft;
                  const m = Math.floor(t / 60);
                  const s = t % 60;
-                 
                  const mStr = m.toString().padStart(2, '0');
                  const sStr = s.toString().padStart(2, '0');
-                 
                  els.timeDisplay.innerHTML = `<span class="tracking-widest">${mStr}</span><span class="relative -top-[5%] pb-2 mx-[-0.05em]">:</span><span class="tracking-widest">${sStr}</span>`;
             }
 
@@ -935,30 +873,68 @@
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
                  els.timeDisplay.classList.remove('text-white', 'text-slate-800', 'text-brand-500');
-                 
                  els.barProgress.classList.remove('bg-brand-500');
                  els.barProgress.classList.add('bg-red-500');
                  els.ringProgress.setAttribute('stroke', '#ef4444');
             } else {
                  els.timeDisplay.classList.remove('text-red-500', 'animate-pulse');
                  els.barProgress.classList.remove('bg-red-500');
-                 
-                 // Apply theme based color
                  if(state.theme === 'dark') {
-                     // In dark mode, visual-bar track is dark, but progress is brand
                      els.barProgress.classList.add('bg-brand-500');
                  } else {
                      els.barProgress.classList.add('bg-brand-500');
                  }
-                 
                  els.ringProgress.setAttribute('stroke', 'rgb(var(--brand-rgb))');
             }
         }
 
+        // Color Menu Helper
+        function renderColorMenu() {
+            if (!els.colorMenu) return;
+            els.colorMenu.innerHTML = '';
+            let currentPalette = [...colors];
+            if (state.mode === 'clock' && state.theme === 'dark') {
+                currentPalette.push({ hex: '#ffffff', rgb: '255 255 255' });
+            }
+            currentPalette.forEach((c) => {
+                const dot = document.createElement('div');
+                dot.className = `color-dot ${c.hex === state.currentColor.hex ? 'active' : ''}`;
+                dot.style.backgroundColor = c.hex;
+                if (c.hex === '#ffffff') dot.style.border = '2px solid #555';
+                dot.onclick = (e) => {
+                    e.stopPropagation();
+                    setColor(c);
+                };
+                els.colorMenu.appendChild(dot);
+            });
+        }
+
+        function toggleColorMenu(e) {
+            if(e) e.stopPropagation();
+            els.colorMenu.classList.toggle('hidden');
+        }
+
+        function setColor(colorObj) {
+            state.currentColor = colorObj;
+            document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
+            saveSettings();
+            renderColorMenu();
+            els.colorMenu.classList.add('hidden');
+            generateAppIcons();
+            applyThemeStyle();
+            updateDisplay();
+        }
+
+        document.addEventListener('click', (e) => {
+            if (els.colorMenu && !els.colorMenu.classList.contains('hidden') && !e.target.closest('#settings-container')) {
+                els.colorMenu.classList.add('hidden');
+            }
+        });
+
+        // Theme and Visual Helpers
         function toggleVisual() {
             state.visualType = state.visualType === 'bar' ? 'ring' : 'bar';
             saveSettings();
-            
             if (state.mode !== 'clock') {
                 if (state.visualType === 'bar') {
                     els.visualBar.style.opacity = '1';
@@ -982,81 +958,85 @@
         }
 
         function applyThemeStyle() {
-            renderColorMenu();
-
             if (state.theme === 'dark') {
                 els.body.classList.replace('bg-white', 'bg-slate-950');
                 els.body.classList.replace('text-slate-800', 'text-white');
-                
-                // Visual Bar Track Color - set to match background or darker to be invisible
                 els.visualBar.classList.replace('bg-slate-100', 'bg-slate-900'); 
-                
                 els.modeContainer.classList.replace('bg-slate-100', 'bg-slate-900');
                 els.modeContainer.classList.replace('border-slate-200', 'border-slate-800');
-                
                 els.settingsContainer.classList.replace('bg-slate-100', 'bg-slate-900');
                 els.settingsContainer.classList.replace('border-slate-200', 'border-slate-800');
-                
                 els.quickGroup.classList.replace('bg-slate-50', 'bg-slate-900');
                 els.quickGroup.classList.replace('border-slate-100', 'border-slate-800');
-                
                 els.presetGroup.classList.replace('bg-slate-50', 'bg-slate-900');
                 els.presetGroup.classList.replace('border-slate-100', 'border-slate-800');
-
                 els.iconTheme.setAttribute('data-lucide', 'sun');
                 els.btnTheme.classList.replace('text-slate-500', 'text-yellow-400');
                 els.btnTheme.classList.replace('hover:text-orange-500', 'hover:text-yellow-200');
                 els.btnTheme.classList.replace('hover:bg-white', 'hover:bg-slate-800');
-
                 els.ringBg.setAttribute('stroke', '#1e293b'); 
-
-                els.quickBtns.forEach(b => {
-                    b.className = "quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-slate-800 text-brand-400 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all active:scale-95 shadow-sm";
-                });
-                els.presetBtns.forEach(b => {
-                    b.className = "preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all active:scale-95 shadow-sm";
-                });
+                els.quickBtns.forEach(b => b.className = "quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-slate-800 text-brand-400 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all active:scale-95 shadow-sm");
+                els.presetBtns.forEach(b => b.className = "preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-white transition-all active:scale-95 shadow-sm");
                 els.colorMenu.className = "absolute top-full right-0 mt-2 p-3 bg-slate-900 rounded-xl shadow-xl border border-slate-800 flex gap-2 hidden z-50 min-w-[200px] flex-wrap justify-center";
-
             } else {
                 els.body.classList.replace('bg-slate-950', 'bg-white');
                 els.body.classList.replace('text-white', 'text-slate-800');
-
-                // Visual Bar Track Color - default light grey
                 els.visualBar.classList.replace('bg-slate-900', 'bg-slate-100');
-
                 els.modeContainer.classList.replace('bg-slate-900', 'bg-slate-100');
                 els.modeContainer.classList.replace('border-slate-800', 'border-slate-200');
-
                 els.settingsContainer.classList.replace('bg-slate-900', 'bg-slate-100');
                 els.settingsContainer.classList.replace('border-slate-800', 'border-slate-200');
-
                 els.quickGroup.classList.replace('bg-slate-900', 'bg-slate-50');
                 els.quickGroup.classList.replace('border-slate-800', 'border-slate-100');
-
                 els.presetGroup.classList.replace('bg-slate-900', 'bg-slate-50');
                 els.presetGroup.classList.replace('border-slate-800', 'border-slate-100');
-
                 els.iconTheme.setAttribute('data-lucide', 'moon');
                 els.btnTheme.classList.replace('text-yellow-400', 'text-slate-500');
                 els.btnTheme.classList.replace('hover:text-yellow-200', 'hover:text-orange-500');
                 els.btnTheme.classList.replace('hover:bg-slate-800', 'hover:bg-white');
-
-                els.ringBg.setAttribute('stroke', '#e2e8f0');
-
-                els.quickBtns.forEach(b => {
-                    b.className = "quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm";
-                });
-                els.presetBtns.forEach(b => {
-                    b.className = "preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm";
-                });
+                els.ringBg.setAttribute('stroke', '#e2e8f0'); 
+                els.quickBtns.forEach(b => b.className = "quick-btn px-4 py-3 rounded-xl font-bold text-lg bg-white text-brand-600 border border-slate-100 hover:bg-brand-50 hover:border-brand-200 transition-all active:scale-95 shadow-sm");
+                els.presetBtns.forEach(b => b.className = "preset-btn px-5 py-3 rounded-xl font-bold text-lg bg-white text-slate-500 border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-all active:scale-95 shadow-sm");
                 els.colorMenu.className = "absolute top-full right-0 mt-2 p-3 bg-white rounded-xl shadow-xl border border-slate-100 flex gap-2 hidden z-50 min-w-[200px] flex-wrap justify-center";
             }
             lucide.createIcons();
-            setMode(state.mode); 
         }
 
-        // Sound Generator (for Beep)
+        // Toggle Sound function (Visual only, logic is in playTone/playAlarmSound)
+        function toggleSound() {
+            // This function is effectively replaced by the select dropdown
+        }
+        
+        function handleFullscreenChange() {
+             if (document.fullscreenElement || document.webkitFullscreenElement) {
+                document.body.classList.add('is-fullscreen');
+            } else {
+                document.body.classList.remove('is-fullscreen');
+            }
+        }
+        
+        function toggleFullscreen() {
+             if (document.body.classList.contains('fake-fullscreen')) {
+                document.body.classList.remove('fake-fullscreen');
+                return;
+            }
+            const docEl = document.documentElement;
+            const requestFs = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                if (requestFs) {
+                    requestFs.call(docEl).catch(e => {
+                        document.body.classList.add('fake-fullscreen');
+                    });
+                } else {
+                    document.body.classList.add('fake-fullscreen');
+                }
+            } else {
+                const exitFs = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFs) exitFs.call(document);
+            }
+        }
+
         function playTone(freq, type, duration, startTime = 0, vol = 0.1) {
             if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
@@ -1069,25 +1049,6 @@
             gain.connect(audioCtx.destination);
             osc.start(audioCtx.currentTime + startTime);
             osc.stop(audioCtx.currentTime + startTime + duration);
-        }
-
-        function playAlarmSound() {
-            initAudio();
-            const type = state.soundType;
-
-            if (type === 'Beep') {
-                playTone(880, 'square', 0.1, 0);
-                playTone(880, 'square', 0.1, 0.15);
-                playTone(880, 'square', 0.4, 0.3);
-            } else {
-                const elId = `sound-${type}`;
-                const el = document.getElementById(elId);
-                if(el) {
-                    el.currentTime = 0;
-                    el.volume = 1.0;
-                    el.play().catch(e => console.log(e));
-                }
-            }
         }
     </script>
 </body>
