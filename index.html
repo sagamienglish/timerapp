@@ -138,6 +138,13 @@
             transform: scale(1.15);
             box-shadow: 0 0 0 2px rgba(255,255,255,1), 0 0 0 4px rgba(0,0,0,0.1);
         }
+
+        #ring-progress {
+            transition: stroke-dashoffset 100ms linear;
+        }
+        #bar-progress {
+            transition: width 100ms linear;
+        }
     </style>
 </head>
 <body class="bg-white text-slate-800 transition-colors duration-300 min-h-screen flex flex-col overflow-hidden" id="app-body" onclick="stopAlarmIfRinging()">
@@ -233,14 +240,13 @@
             <svg class="w-[85vmin] h-[85vmin] transform -rotate-90 drop-shadow-xl" viewBox="0 0 100 100">
                 <circle id="ring-bg" cx="50" cy="50" r="42" fill="none" stroke="#e2e8f0" stroke-width="8" class="opacity-50"></circle>
                 <circle id="ring-progress" cx="50" cy="50" r="42" fill="none" stroke="rgb(var(--brand-rgb))" stroke-width="8" 
-                        stroke-dasharray="263.89" stroke-dashoffset="0" stroke-linecap="round"
-                        class="transition-all duration-1000 ease-linear"></circle>
+                        stroke-dasharray="263.89" stroke-dashoffset="0" stroke-linecap="round"></circle>
             </svg>
         </div>
 
         <!-- Visuals (Bar) -->
         <div id="visual-bar" class="absolute top-0 left-0 w-full h-4 bg-slate-100">
-            <div id="bar-progress" class="h-full bg-brand-500 shadow-lg transition-all duration-1000 ease-linear" style="width: 100%;"></div>
+            <div id="bar-progress" class="h-full bg-brand-500 shadow-lg" style="width: 100%;"></div>
         </div>
 
         <!-- Time Display Container -->
@@ -635,6 +641,7 @@
                 clearInterval(state.interval);
                 updatePlayButton();
                 updateBgm();
+                updateDisplay();
                 return;
             }
             
@@ -705,9 +712,20 @@
 
         function refreshAfterReturn() {
             if (document.hidden || !els.timeDisplay) return;
-            if (state.isActive && state.mode === 'timer') tick();
-            else if (state.isActive && state.mode === 'stopwatch') tickStopwatch();
-            else updateDisplay();
+            const progressElements = [els.ringProgress, els.barProgress];
+            const transitions = progressElements.map(el => el.style.transition);
+            // Commit the current progress without animating from Safari's stale frame.
+            progressElements.forEach(el => { el.style.transition = 'none'; });
+            try {
+                if (state.isActive && state.mode === 'timer') tick();
+                else if (state.isActive && state.mode === 'stopwatch') tickStopwatch();
+                else updateDisplay();
+                progressElements.forEach(el => { el.getBoundingClientRect(); });
+            } finally {
+                progressElements.forEach((el, index) => {
+                    el.style.transition = transitions[index];
+                });
+            }
             updateBgm();
         }
 
@@ -979,17 +997,22 @@
 
             let pct = 100;
             if (state.mode === 'timer') {
-                pct = (state.timeLeft / state.initialTime) * 100;
+                // Use the precise remaining duration; keep the numeric display rounded.
+                const remainingMs = state.isActive && state.timerEndTime !== null
+                    ? Math.max(0, state.timerEndTime - Date.now()) : state.remainingMs;
+                pct = state.initialTime > 0 ? (remainingMs / (state.initialTime * 1000)) * 100 : 0;
                 pct = Math.max(0, Math.min(100, pct));
             }
 
+            // Pauses, presets and resets must settle exactly at the current value.
+            const progressDuration = state.isActive ? '100ms' : '0s';
+            els.barProgress.style.transitionDuration = progressDuration;
+            els.ringProgress.style.transitionDuration = progressDuration;
             els.barProgress.style.width = `${pct}%`;
             
-            const circumference = 263.89; 
-            const remaining = circumference * (pct / 100);
-            const elapsed = circumference - remaining;
-            els.ringProgress.style.strokeDasharray = `${remaining} ${circumference}`;
-            els.ringProgress.style.strokeDashoffset = `-${elapsed}`;
+            const circumference = 2 * Math.PI * 42;
+            els.ringProgress.style.strokeDasharray = `${circumference}`;
+            els.ringProgress.style.strokeDashoffset = `${circumference * (1 - pct / 100)}`;
             
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
