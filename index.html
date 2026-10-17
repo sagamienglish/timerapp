@@ -329,6 +329,8 @@
             mode: 'timer', 
             soundType: 'Alarm.mp3', // Default
             timeLeft: 300,
+            remainingMs: 300000,
+            timerEndTime: null,
             initialTime: 300,
             countUpTime: 0, 
             stopwatchStartTime: 0,
@@ -401,6 +403,9 @@
 
             document.addEventListener('fullscreenchange', handleFullscreenChange);
             document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.addEventListener('visibilitychange', refreshAfterReturn);
+            window.addEventListener('pageshow', refreshAfterReturn);
+            window.addEventListener('focus', refreshAfterReturn);
             
             // Clock Mode Loop
             setInterval(() => {
@@ -441,10 +446,13 @@
                     state.soundType = parsed.soundType || state.soundType;
                     state.selectedBgm = parsed.selectedBgm || state.selectedBgm;
                     state.currentColor = parsed.currentColor || state.currentColor;
-                    if (parsed.lastTimeLeft) state.timeLeft = parsed.lastTimeLeft;
+                    if (Number.isFinite(parsed.lastTimeLeft) && parsed.lastTimeLeft >= 0) {
+                        state.timeLeft = parsed.lastTimeLeft;
+                    }
                     if (parsed.lastInitialTime) state.initialTime = parsed.lastInitialTime;
                 } catch(e) {}
             }
+            state.remainingMs = state.timeLeft * 1000;
              document.documentElement.style.setProperty('--brand-rgb', state.currentColor.rgb);
         }
 
@@ -613,6 +621,22 @@
 
         function toggleTimer() {
             if (state.mode === 'clock') return;
+
+            // Capture elapsed time before pausing, even if Safari skipped ticks.
+            if (state.isActive) {
+                if (state.mode === 'timer') {
+                    tick();
+                    if (!state.isActive) return;
+                    state.timerEndTime = null;
+                } else {
+                    tickStopwatch();
+                }
+                state.isActive = false;
+                clearInterval(state.interval);
+                updatePlayButton();
+                updateBgm();
+                return;
+            }
             
             // Auto Reset if finished
             if (state.mode === 'timer' && state.timeLeft <= 0) {
@@ -621,6 +645,7 @@
                     return;
                 }
                 state.timeLeft = state.initialTime;
+                state.remainingMs = state.timeLeft * 1000;
                 updateDisplay();
             }
 
@@ -639,7 +664,8 @@
                     state.stopwatchStartTime = now - state.countUpTime;
                     state.interval = setInterval(tickStopwatch, 33); 
                 } else {
-                    state.interval = setInterval(tick, 1000);
+                    state.timerEndTime = Date.now() + state.remainingMs;
+                    state.interval = setInterval(tick, 100);
                 }
             } else {
                 clearInterval(state.interval);
@@ -647,33 +673,46 @@
         }
 
         function tick() {
-            if (state.mode === 'timer') {
-                if (state.timeLeft <= 0) {
-                    state.timeLeft = 0;
-                    state.isActive = false;
-                    clearInterval(state.interval);
-                    updatePlayButton();
-                    updateBgm(); // Stop BGM
-                    playAlarmLoop(); 
-                } else {
-                    state.timeLeft--;
-                    
-                    // Fade Out BGM
-                    if (state.selectedBgm && els.bgmPlayer) {
-                         if (state.timeLeft <= 4 && state.timeLeft > 0) {
-                             els.bgmPlayer.volume = (state.timeLeft / 5) * 0.8;
-                         } else if (state.timeLeft > 4) {
-                             els.bgmPlayer.volume = 0.8;
-                         }
-                    }
-                }
-            } else {
-                state.countUpTime++;
+            if (state.mode !== 'timer' || !state.isActive) return;
+            syncRemainingTime();
+            // Leave completion pending while hidden; the return events handle it.
+            if (state.remainingMs === 0 && !document.hidden) {
+                finishTimer();
+            } else if (state.selectedBgm && els.bgmPlayer) {
+                els.bgmPlayer.volume = state.timeLeft <= 4
+                    ? (state.timeLeft / 5) * 0.8 : 0.8;
             }
             updateDisplay();
         }
 
+        function syncRemainingTime() {
+            if (state.mode === 'timer' && state.isActive && state.timerEndTime !== null) {
+                state.remainingMs = Math.max(0, state.timerEndTime - Date.now());
+                state.timeLeft = Math.ceil(state.remainingMs / 1000);
+            }
+        }
+
+        function finishTimer() {
+            if (!state.isActive || state.timerEndTime === null) return;
+            // Clear the running state before effects so return events cannot repeat them.
+            state.isActive = false;
+            state.timerEndTime = null;
+            clearInterval(state.interval);
+            updatePlayButton();
+            updateBgm();
+            playAlarmLoop();
+        }
+
+        function refreshAfterReturn() {
+            if (document.hidden || !els.timeDisplay) return;
+            if (state.isActive && state.mode === 'timer') tick();
+            else if (state.isActive && state.mode === 'stopwatch') tickStopwatch();
+            else updateDisplay();
+            updateBgm();
+        }
+
         function tickStopwatch() {
+            if (state.mode !== 'stopwatch' || !state.isActive) return;
             const now = Date.now();
             state.countUpTime = now - state.stopwatchStartTime;
             updateDisplay();
@@ -777,6 +816,7 @@
 
         function resetTimer() {
             state.isActive = false;
+            state.timerEndTime = null;
             clearInterval(state.interval);
             stopAlarmIfRinging();
             updatePlayButton();
@@ -784,6 +824,7 @@
             
             if (state.mode === 'timer') {
                 state.timeLeft = state.initialTime;
+                state.remainingMs = state.timeLeft * 1000;
                 saveSettings(); 
             } else {
                 state.countUpTime = 0;
@@ -794,20 +835,27 @@
 
         function addTime(seconds) {
             if (state.mode !== 'timer') return;
-            state.timeLeft += seconds;
-            if (state.timeLeft < 0) state.timeLeft = 0; 
+            if (state.isActive) tick();
+            state.remainingMs = Math.max(0, state.remainingMs + seconds * 1000);
+            state.timeLeft = Math.ceil(state.remainingMs / 1000);
+            if (state.isActive) {
+                state.timerEndTime = Date.now() + state.remainingMs;
+            }
             if (state.timeLeft > state.initialTime) {
                 state.initialTime = state.timeLeft;
             }
             saveSettings(); 
+            if (state.isActive) tick();
             updateDisplay();
         }
 
         function setPreset(seconds) {
             state.isActive = false;
+            state.timerEndTime = null;
             clearInterval(state.interval);
             stopAlarmIfRinging();
             state.timeLeft = seconds;
+            state.remainingMs = seconds * 1000;
             state.initialTime = Math.max(1, seconds);
             updatePlayButton();
             updateBgm(); 
@@ -816,6 +864,9 @@
         }
 
         function setMode(mode) {
+            syncRemainingTime();
+            if (state.isActive && state.mode === 'stopwatch') tickStopwatch();
+            state.timerEndTime = null;
             state.mode = mode;
             state.isActive = false;
             clearInterval(state.interval);
@@ -1076,3 +1127,4 @@
     </script>
 </body>
 </html>
+
