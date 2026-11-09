@@ -1012,7 +1012,8 @@
             
             const circumference = 2 * Math.PI * 42;
             els.ringProgress.style.strokeDasharray = `${circumference}`;
-            els.ringProgress.style.strokeDashoffset = `${circumference * (1 - pct / 100)}`;
+            // A negative offset opens the gap clockwise from the 12 o'clock position.
+            els.ringProgress.style.strokeDashoffset = `${-circumference * (1 - pct / 100)}`;
             
             if (state.mode === 'timer' && (state.timeLeft <= 0 || state.isAlarmRinging)) {
                  els.timeDisplay.classList.add('text-red-500', 'animate-pulse');
